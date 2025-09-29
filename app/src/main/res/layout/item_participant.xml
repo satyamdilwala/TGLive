@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="8dp"
+    android:background="?android:attr/selectableItemBackground">
+
+    <!-- Username Column -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="2"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <!-- Participant Profile Picture -->
+        <ImageView
+            android:id="@+id/ivParticipantPhoto"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginEnd="8dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/circle_profile"
+            android:contentDescription="Participant profile picture"
+            tools:src="@drawable/ic_launcher_foreground" />
+
+        <!-- Participant Name -->
+        <TextView
+            android:id="@+id/tvParticipantName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="14sp"
+            android:textColor="@android:color/black"
+            android:maxLines="1"
+            android:ellipsize="end"
+            tools:text="Participant Name" />
+
+    </LinearLayout>
+
+    <!-- Camera/Screen Status Column -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/tvCameraStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="NO"
+            android:textSize="12sp"
+            android:textColor="@color/status_inactive"
+            android:background="@drawable/status_indicator_background"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:minWidth="32dp"
+            android:gravity="center"
+            tools:text="YES" />
+
+    </LinearLayout>
+
+    <!-- Speaking Status Column -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/tvSpeakingStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="NO"
+            android:textSize="12sp"
+            android:textColor="@color/status_inactive"
+            android:background="@drawable/status_indicator_background"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:minWidth="32dp"
+            android:gravity="center"
+            tools:text="NO" />
+
+    </LinearLayout>
+
+    <!-- Muted Status Column -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/tvMutedStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="NO"
+            android:textSize="12sp"
+            android:textColor="@color/status_inactive"
+            android:background="@drawable/status_indicator_background"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:minWidth="32dp"
+            android:gravity="center"
+            tools:text="NO" />
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -1,5 +1,6 @@
 package app.fqrs.tglive
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
@@ -51,7 +52,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun initializeTelegram() {
-        telegramClient = TelegramClient(this)
+        telegramClient = TelegramClientSingleton.getInstance(this)
         authManager = AuthenticationManager(telegramClient)
         profileManager = UserProfileManager(telegramClient)
     }
@@ -75,6 +76,10 @@ class MainActivity : AppCompatActivity() {
         
         binding.backButton.setOnClickListener {
             goBackToPhoneInput()
+        }
+        
+        binding.showChannelButton.setOnClickListener {
+            showChannelInfo()
         }
     }
     
@@ -126,14 +131,14 @@ class MainActivity : AppCompatActivity() {
                         // Error occurred - show login section
                         showLoginSection()
                         binding.statusText.text = "Ready to login"
-                        println("DEBUG: Auth check error: ${authResult.message}")
+                        println("TGLIVE: Auth check error: ${authResult.message}")
                     }
                 }
             } catch (e: Exception) {
                 // Exception occurred - show login section
                 showLoginSection()
                 binding.statusText.text = "Ready to login"
-                println("DEBUG: Exception checking auth state: ${e.message}")
+                println("TGLIVE: Exception checking auth state: ${e.message}")
                 e.printStackTrace()
             }
         }
@@ -193,7 +198,7 @@ class MainActivity : AppCompatActivity() {
     
     private fun sendCode() {
         val code = binding.codeInput.text.toString().trim()
-        println("DEBUG: Attempting to send code: $code")
+        println("TGLIVE: Attempting to send code: $code")
         
         if (code.isEmpty()) {
             Toast.makeText(this, "Please enter verification code", Toast.LENGTH_SHORT).show()
@@ -206,27 +211,27 @@ class MainActivity : AppCompatActivity() {
             binding.loginButton.isEnabled = false
             
             try {
-                println("DEBUG: Calling authManager.checkCode")
+                println("TGLIVE: Calling authManager.checkCode")
                 val result = authManager.checkCode(code)
-                println("DEBUG: checkCode result: $result")
+                println("TGLIVE: checkCode result: $result")
                 
                 when (result) {
                     is AuthResult.Success -> {
-                        println("DEBUG: Code verification successful, handling auth result")
+                        println("TGLIVE: Code verification successful, handling auth result")
                         // Check if we need password or if we're logged in
                         handleAuthenticationResult()
                     }
                     is AuthResult.Error -> {
-                        println("DEBUG: Code verification error: ${result.message}")
+                        println("TGLIVE: Code verification error: ${result.message}")
                         binding.statusText.text = result.message
                     }
                     else -> {
-                        println("DEBUG: Unexpected result type: $result")
+                        println("TGLIVE: Unexpected result type: $result")
                         binding.statusText.text = "Invalid code. Please try again."
                     }
                 }
             } catch (e: Exception) {
-                println("DEBUG: Exception in sendCode: ${e.message}")
+                println("TGLIVE: Exception in sendCode: ${e.message}")
                 binding.statusText.text = "Error: ${e.message}"
                 e.printStackTrace()
             }
@@ -324,18 +329,18 @@ class MainActivity : AppCompatActivity() {
             showLoading(true)
             
             try {
-                println("DEBUG: Starting profile load...")
+                println("TGLIVE: Starting profile load...")
                 val profile = profileManager.getCompleteUserProfile()
                 if (profile != null) {
-                    println("DEBUG: Profile loaded successfully: ${profile.displayName}")
+                    println("TGLIVE: Profile loaded successfully: ${profile.displayName}")
                     displayProfile(profile)
                 } else {
-                    println("DEBUG: Failed to load profile - null returned")
+                    println("TGLIVE: Failed to load profile - null returned")
                     showLoginSection()
                     binding.statusText.text = "Failed to load profile. Please try logging in again."
                 }
             } catch (e: Exception) {
-                println("DEBUG: Exception loading profile: ${e.message}")
+                println("TGLIVE: Exception loading profile: ${e.message}")
                 e.printStackTrace()
                 showLoginSection()
                 binding.statusText.text = "Error loading profile: ${e.message}"
@@ -369,7 +374,7 @@ class MainActivity : AppCompatActivity() {
     private fun logout() {
         lifecycleScope.launch {
             // Actually log out and destroy the session
-            telegramClient.destroy()
+            TelegramClientSingleton.destroyInstance()
             
             // Reset UI to login section
             showLoginSection()
@@ -402,6 +407,12 @@ class MainActivity : AppCompatActivity() {
         binding.loadingOverlay.visibility = View.GONE
         binding.loginSection.visibility = View.GONE
         binding.profileSection.visibility = View.VISIBLE
+        
+        // Set default channel handle
+        if (binding.channelHandleInput.text.toString().trim().isEmpty()) {
+            binding.channelHandleInput.setText("tglivefqrs")
+        }
+        
         binding.profileSection.startAnimation(android.view.animation.AnimationUtils.loadAnimation(this, R.anim.fade_in))
     }
     
@@ -467,7 +478,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         // Just disconnect, don't destroy the session
-        telegramClient.close()
+        TelegramClientSingleton.closeInstance()
     }
     
     private fun loadProfilePicture(photoUrl: String?) {
@@ -478,21 +489,21 @@ class MainActivity : AppCompatActivity() {
                 if (bitmap != null) {
                     val circularBitmap = createCircularBitmap(bitmap)
                     binding.profileImageView.setImageBitmap(circularBitmap)
-                    println("DEBUG: Profile picture loaded successfully")
+                    println("TGLIVE: Profile picture loaded successfully")
                 } else {
                     // Use default image if bitmap is null
                     binding.profileImageView.setImageResource(R.mipmap.ic_launcher)
-                    println("DEBUG: Failed to decode profile picture, using default")
+                    println("TGLIVE: Failed to decode profile picture, using default")
                 }
             } catch (e: Exception) {
                 // Use default image on error
                 binding.profileImageView.setImageResource(R.mipmap.ic_launcher)
-                println("DEBUG: Error loading profile picture: ${e.message}")
+                println("TGLIVE: Error loading profile picture: ${e.message}")
             }
         } else {
             // Use default image if no photo URL
             binding.profileImageView.setImageResource(R.mipmap.ic_launcher)
-            println("DEBUG: No profile picture URL, using default")
+            println("TGLIVE: No profile picture URL, using default")
         }
     }
     
@@ -534,6 +545,38 @@ class MainActivity : AppCompatActivity() {
             phoneNumber
         }
     }
+    
+    private fun showChannelInfo() {
+        val channelHandle = binding.channelHandleInput.text.toString().trim()
+        
+        // Validate input is not empty
+        if (channelHandle.isEmpty()) {
+            Toast.makeText(this, "Please enter a channel handle", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        // Validate channel handle format (basic validation)
+        if (!isValidChannelHandle(channelHandle)) {
+            Toast.makeText(this, "Invalid channel handle format", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        // Create intent to navigate to ChannelInfoActivity
+        val intent = Intent(this, ChannelInfoActivity::class.java).apply {
+            putExtra(ChannelInfoActivity.EXTRA_CHANNEL_HANDLE, channelHandle)
+        }
+        
+        startActivity(intent)
+    }
+    
+    private fun isValidChannelHandle(handle: String): Boolean {
+        // Basic validation for channel handle
+        // Should contain only alphanumeric characters, underscores, and be 5-32 characters long
+        val regex = Regex("^[a-zA-Z0-9_]{5,32}$")
+        return regex.matches(handle)
+    }
+    
+
     
     private enum class AuthState {
         PHONE_NUMBER, CODE, PASSWORD

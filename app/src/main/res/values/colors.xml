@@ -26,6 +26,12 @@
     <color name="error">#F44336</color>
     <color name="warning">#FF9800</color>
     
+    <!-- Participant Status Colors -->
+    <color name="status_active">#4CAF50</color>
+    <color name="status_inactive">#757575</color>
+    <color name="status_background">#F5F5F5</color>
+    <color name="status_border">#E0E0E0</color>
+    
     <!-- Live Stream Colors -->
     <color name="live_red">#FF4444</color>
     <color name="live_gradient_start">#FF6B6B</color>
@@ -37,6 +43,9 @@
     <color name="telegram_blue">#FF4444</color>
     <color name="border">#DDDDDD</color>
     <color name="divider">#EEEEEE</color>
+    
+    <!-- Header Colors -->
+    <color name="header_background">#F0F0F0</color>
     
     <!-- Default Material Colors -->
     <color name="purple_200">#FFBB86FC</color>

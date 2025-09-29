@@ -21,36 +21,66 @@ class TelegramClient(private val context: Context) {
     
     private val authStateChannel = Channel<TdApi.AuthorizationState>(Channel.UNLIMITED)
     
+    // UpdatesHandler for real-time updates
+    private var updatesHandler: UpdatesHandler? = null
+    
     init {
         try {
-            println("DEBUG: Setting TDLib log verbosity")
+            println("TGLIVE: Setting TDLib log verbosity")
             Client.execute(TdApi.SetLogVerbosityLevel(2))
-            println("DEBUG: Creating TDLib client")
+            println("TGLIVE: Creating TDLib client")
             createClient()
-            println("DEBUG: TDLib client created successfully")
+            println("TGLIVE: TDLib client created successfully")
         } catch (e: Exception) {
-            println("DEBUG: Failed to initialize TDLib: ${e.message}")
+            println("TGLIVE: Failed to initialize TDLib: ${e.message}")
             e.printStackTrace()
         }
     }
     
     private fun createClient() {
         client = Client.create({ update ->
-            println("DEBUG: Received update: ${update?.javaClass?.simpleName}")
+            println("TGLIVE: 🔥 TDLib Update Received: ${update?.javaClass?.simpleName}")
+            
+            // Log specific updates we care about
             when (update?.constructor) {
                 TdApi.UpdateAuthorizationState.CONSTRUCTOR -> {
                     val authUpdate = update as TdApi.UpdateAuthorizationState
-                    println("DEBUG: Auth state update: ${authUpdate.authorizationState.javaClass.simpleName}")
+                    println("TGLIVE: Auth state update: ${authUpdate.authorizationState.javaClass.simpleName}")
                     authStateChannel.trySend(authUpdate.authorizationState)
                 }
                 else -> {
-                    // Handle other updates if needed
+                    // Forward ALL non-auth updates to UpdatesHandler (including UpdateChatVideoChat, UpdateGroupCall, etc.)
+                    if (update is TdApi.Update) {
+                        println("TGLIVE: Forwarding update to UpdatesHandler: ${update.javaClass.simpleName}")
+                        
+                        // Minimal logging for performance - only critical updates
+                        when (update.constructor) {
+                            TdApi.UpdateChatVideoChat.CONSTRUCTOR -> {
+                                val videoChatUpdate = update as TdApi.UpdateChatVideoChat
+                                println("TGLIVE: VideoChat ${if (videoChatUpdate.videoChat?.groupCallId != 0) "started" else "ended"}")
+                            }
+                            TdApi.UpdateGroupCall.CONSTRUCTOR -> {
+                                val groupCallUpdate = update as TdApi.UpdateGroupCall
+                                if (groupCallUpdate.groupCall.isActive) {
+                                    println("TGLIVE: GroupCall active - ${groupCallUpdate.groupCall.participantCount} participants")
+                                }
+                            }
+                            // Skip logging for participant updates to reduce CPU overhead
+                        }
+                        
+                        if (updatesHandler != null) {
+                            updatesHandler?.emitUpdate(update)
+                            println("TGLIVE: Update forwarded successfully")
+                        } else {
+                            println("TGLIVE: WARNING: No UpdatesHandler set, update lost: ${update.javaClass.simpleName}")
+                        }
+                    }
                 }
             }
         }, { exception ->
-            println("DEBUG: Client exception: $exception")
+            println("TGLIVE: Client exception: $exception")
         }) { error ->
-            println("DEBUG: Client error: $error")
+            println("TGLIVE: Client error: $error")
         }
     }
     
@@ -60,18 +90,18 @@ class TelegramClient(private val context: Context) {
             val deferred = CompletableDeferred<TdApi.Object>()
             handlers[id] = deferred
             
-            println("DEBUG: Sending function: ${function.javaClass.simpleName} with ID: $id")
+            println("TGLIVE: Sending function: ${function.javaClass.simpleName} with ID: $id")
             
             client?.send(function, { result ->
-                println("DEBUG: Received result for ID $id: ${result?.javaClass?.simpleName}")
+                println("TGLIVE: Received result for ID $id: ${result?.javaClass?.simpleName}")
                 val handler = handlers.remove(id)
                 if (handler != null) {
                     handler.complete(result ?: TdApi.Error(500, "Null result"))
                 } else {
-                    println("DEBUG: No handler found for ID $id")
+                    println("TGLIVE: No handler found for ID $id")
                 }
             }) { error ->
-                println("DEBUG: Received error for ID $id: $error")
+                println("TGLIVE: Received error for ID $id: $error")
                 val handler = handlers.remove(id)
                 handler?.complete(TdApi.Error(500, "Send failed: $error"))
             }
@@ -137,10 +167,10 @@ class TelegramClient(private val context: Context) {
         return try {
             // Get the actual Android version
             val release = Build.VERSION.RELEASE
-            println("DEBUG: Detected Android version: $release")
+            println("TGLIVE: Detected Android version: $release")
             release
         } catch (e: Exception) {
-            println("DEBUG: Failed to get Android version: ${e.message}")
+            println("TGLIVE: Failed to get Android version: ${e.message}")
             "Unknown"
         }
     }
@@ -172,7 +202,12 @@ class TelegramClient(private val context: Context) {
     private fun getAppVersion(): String {
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            "${packageInfo.versionName} (${packageInfo.longVersionCode})"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                "${packageInfo.versionName} (${packageInfo.longVersionCode})"
+            } else {
+                @Suppress("DEPRECATION")
+                "${packageInfo.versionName} (${packageInfo.versionCode})"
+            }
         } catch (e: Exception) {
             "1.0"
         }
@@ -190,25 +225,25 @@ class TelegramClient(private val context: Context) {
         return try {
             // If already initialized, return quickly
             if (isInitialized && client != null) {
-                println("DEBUG: TelegramClient already initialized")
+                println("TGLIVE: TelegramClient already initialized")
                 return true
             }
             
-            println("DEBUG: Initializing TelegramClient with API ID: $apiId")
+            println("TGLIVE: Initializing TelegramClient with API ID: $apiId")
             
             // If client is null, recreate it
             if (client == null) {
-                println("DEBUG: Client is null, creating new client")
+                println("TGLIVE: Client is null, creating new client")
                 createClient()
             }
             
             // Check current auth state first
             val currentAuthState = send(TdApi.GetAuthorizationState())
-            println("DEBUG: Current auth state: ${currentAuthState.javaClass.simpleName}")
+            println("TGLIVE: Current auth state: ${currentAuthState.javaClass.simpleName}")
             
             // If we're already past the parameters stage, we don't need to set them again
             if (currentAuthState.constructor != TdApi.AuthorizationStateWaitTdlibParameters.CONSTRUCTOR) {
-                println("DEBUG: TDLib already initialized, current state: ${currentAuthState.javaClass.simpleName}")
+                println("TGLIVE: TDLib already initialized, current state: ${currentAuthState.javaClass.simpleName}")
                 isInitialized = true
                 return true
             }
@@ -217,15 +252,15 @@ class TelegramClient(private val context: Context) {
             val databaseDir = context.filesDir.absolutePath + "/tdlib"
             val filesDir = context.cacheDir.absolutePath + "/tdlib"
             
-            println("DEBUG: Database directory: $databaseDir")
-            println("DEBUG: Files directory: $filesDir")
+            println("TGLIVE: Database directory: $databaseDir")
+            println("TGLIVE: Files directory: $filesDir")
             
             val deviceInfo = getCompleteDeviceInfo()
             
             // Create session string for Telegram with complete device ID
             val sessionString = "${deviceInfo.appName} ${deviceInfo.appVersion}, ${deviceInfo.deviceName}, ${deviceInfo.deviceModel}, ${deviceInfo.manufacturer}, Android ${deviceInfo.androidVersion}, ${deviceInfo.platform}, ${deviceInfo.deviceId}"
             
-            println("DEBUG: Complete Device Info:")
+            println("TGLIVE: Complete Device Info:")
             println("  App: ${deviceInfo.appName} ${deviceInfo.appVersion}")
             println("  Device Name: ${deviceInfo.deviceName}")
             println("  Device Model: ${deviceInfo.deviceModel}")
@@ -234,9 +269,9 @@ class TelegramClient(private val context: Context) {
             println("  Android Version: ${deviceInfo.androidVersion}")
             println("  Platform: ${deviceInfo.platform}")
             println("  Complete Device ID: ${deviceInfo.deviceId}")
-            println("DEBUG: Build.VERSION.RELEASE = ${Build.VERSION.RELEASE}")
-            println("DEBUG: Build.VERSION.SDK_INT = ${Build.VERSION.SDK_INT}")
-            println("DEBUG: Complete Session String: $sessionString")
+            println("TGLIVE: Build.VERSION.RELEASE = ${Build.VERSION.RELEASE}")
+            println("TGLIVE: Build.VERSION.SDK_INT = ${Build.VERSION.SDK_INT}")
+            println("TGLIVE: Complete Session String: $sessionString")
             
             // Prepare TDLib parameters with new format:
             // TG Live [version], [Device Name], [Model], [Manufacturer], Android [version], Android, [Device ID]
@@ -261,33 +296,37 @@ class TelegramClient(private val context: Context) {
                 tdlibApplicationVersion // applicationVersion
             )
             
-            println("DEBUG: Sending SetTdlibParameters")
+            println("TGLIVE: Sending SetTdlibParameters")
             val result = send(parameters)
-            println("DEBUG: SetTdlibParameters result: ${result.javaClass.simpleName}")
+            println("TGLIVE: SetTdlibParameters result: ${result.javaClass.simpleName}")
             
             // Log what will appear in Telegram sessions
-            println("DEBUG: Telegram Session Info (what users will see):")
+            println("TGLIVE: Telegram Session Info (what users will see):")
             println("  Complete Session String: $sessionString")
-            println("DEBUG: Format: TG Live [version], [Device Name], [Model], [Manufacturer], Android [version], Android, [Complete Device ID]")
+            println("TGLIVE: Format: TG Live [version], [Device Name], [Model], [Manufacturer], Android [version], Android, [Complete Device ID]")
             
             when (result.constructor) {
                 TdApi.Ok.CONSTRUCTOR -> {
-                    println("DEBUG: TDLib parameters set successfully")
+                    println("TGLIVE: TDLib parameters set successfully")
                     isInitialized = true
+                    
+                    // CRITICAL: Enable updates reception immediately
+                    enableUpdatesReception()
+                    
                     true
                 }
                 TdApi.Error.CONSTRUCTOR -> {
                     val error = result as TdApi.Error
-                    println("DEBUG: TDLib parameters error: ${error.code} - ${error.message}")
+                    println("TGLIVE: TDLib parameters error: ${error.code} - ${error.message}")
                     false
                 }
                 else -> {
-                    println("DEBUG: Unexpected result: ${result.javaClass.simpleName}")
+                    println("TGLIVE: Unexpected result: ${result.javaClass.simpleName}")
                     false
                 }
             }
         } catch (e: Exception) {
-            println("DEBUG: Exception in initialize: ${e.message}")
+            println("TGLIVE: Exception in initialize: ${e.message}")
             e.printStackTrace()
             false
         }
@@ -301,7 +340,7 @@ class TelegramClient(private val context: Context) {
             // Wait for the right state
             val authState = waitForAuthorizationState()
             if (authState.constructor != TdApi.AuthorizationStateWaitPhoneNumber.CONSTRUCTOR) {
-                println("DEBUG: Not in phone number waiting state: ${authState.javaClass.simpleName}")
+                println("TGLIVE: Not in phone number waiting state: ${authState.javaClass.simpleName}")
                 return false
             }
             
@@ -309,7 +348,7 @@ class TelegramClient(private val context: Context) {
             val result = send(TdApi.SetAuthenticationPhoneNumber(phoneNumber, null))
             result.constructor == TdApi.Ok.CONSTRUCTOR
         } catch (e: Exception) {
-            println("DEBUG: Exception in setPhoneNumber: ${e.message}")
+            println("TGLIVE: Exception in setPhoneNumber: ${e.message}")
             e.printStackTrace()
             false
         }
@@ -317,18 +356,18 @@ class TelegramClient(private val context: Context) {
     
     suspend fun checkCode(code: String): AuthResult {
         return try {
-            println("DEBUG: Checking code: $code")
+            println("TGLIVE: Checking code: $code")
             
             // First check current auth state
             val currentState = waitForAuthorizationState()
-            println("DEBUG: Current auth state: ${currentState.javaClass.simpleName}")
+            println("TGLIVE: Current auth state: ${currentState.javaClass.simpleName}")
             
             if (currentState.constructor != TdApi.AuthorizationStateWaitCode.CONSTRUCTOR) {
                 return AuthResult.Error("Not in code waiting state. Current state: ${currentState.javaClass.simpleName}")
             }
             
             val result = send(TdApi.CheckAuthenticationCode(code))
-            println("DEBUG: CheckCode result: ${result.javaClass.simpleName}")
+            println("TGLIVE: CheckCode result: ${result.javaClass.simpleName}")
             
             if (result.constructor == TdApi.Ok.CONSTRUCTOR) {
                 AuthResult.Success
@@ -336,17 +375,17 @@ class TelegramClient(private val context: Context) {
                 when (result.constructor) {
                     TdApi.Error.CONSTRUCTOR -> {
                         val error = result as TdApi.Error
-                        println("DEBUG: Error code: ${error.code}, message: ${error.message}")
+                        println("TGLIVE: Error code: ${error.code}, message: ${error.message}")
                         AuthResult.Error("Code verification failed (${error.code}): ${error.message}")
                     }
                     else -> {
-                        println("DEBUG: Unexpected result type: ${result.javaClass.simpleName}")
+                        println("TGLIVE: Unexpected result type: ${result.javaClass.simpleName}")
                         AuthResult.Error("Unexpected response: ${result.javaClass.simpleName}")
                     }
                 }
             }
         } catch (e: Exception) {
-            println("DEBUG: Exception in checkCode: ${e.message}")
+            println("TGLIVE: Exception in checkCode: ${e.message}")
             e.printStackTrace()
             AuthResult.Error("Network error: ${e.message}")
         }
@@ -378,17 +417,17 @@ class TelegramClient(private val context: Context) {
         return try {
             val result = send(TdApi.GetAuthorizationState())
             if (result is TdApi.AuthorizationState) {
-                println("DEBUG: Got current auth state: ${result.javaClass.simpleName}")
+                println("TGLIVE: Got current auth state: ${result.javaClass.simpleName}")
                 result
             } else {
-                println("DEBUG: GetAuthorizationState returned non-auth state, waiting for update")
+                println("TGLIVE: GetAuthorizationState returned non-auth state, waiting for update")
                 // If that doesn't work, wait for an update with shorter timeout
                 withTimeoutOrNull(2000) {
                     authStateChannel.receive()
                 } ?: TdApi.AuthorizationStateWaitPhoneNumber()
             }
         } catch (e: Exception) {
-            println("DEBUG: Exception getting auth state: ${e.message}")
+            println("TGLIVE: Exception getting auth state: ${e.message}")
             TdApi.AuthorizationStateWaitPhoneNumber()
         }
     }
@@ -405,7 +444,7 @@ class TelegramClient(private val context: Context) {
                 else -> "waitPhoneNumber"
             }
         } catch (e: Exception) {
-            println("DEBUG: Error getting auth state: ${e.message}")
+            println("TGLIVE: Error getting auth state: ${e.message}")
             "waitPhoneNumber"
         }
     }
@@ -413,14 +452,14 @@ class TelegramClient(private val context: Context) {
     fun close() {
         // Don't send Close() as it destroys the session and authentication state
         // Just set client to null to disconnect
-        println("DEBUG: Disconnecting TelegramClient (preserving auth state)")
+        println("TGLIVE: Disconnecting TelegramClient (preserving auth state)")
         client = null
         // Don't reset isInitialized flag to keep it fast on restart
     }
     
     fun destroy() {
         // Only call this when you want to completely log out
-        println("DEBUG: Destroying TelegramClient and clearing auth state")
+        println("TGLIVE: Destroying TelegramClient and clearing auth state")
         client?.send(TdApi.Close(), null, null)
         client = null
         isInitialized = false // Reset initialization flag on logout
@@ -479,6 +518,178 @@ class TelegramClient(private val context: Context) {
             "systemLanguageCode" to java.util.Locale.getDefault().language,
             "fullSessionString" to sessionString
         )
+    }
+    
+    /**
+     * Set the UpdatesHandler for real-time updates
+     * Requirements: 6.1 - integrate with client.setUpdatesHandler
+     */
+    fun setUpdatesHandler(handler: UpdatesHandler) {
+        println("TGLIVE: Setting UpdatesHandler - Previous handler: ${this.updatesHandler != null}")
+        this.updatesHandler = handler
+        handler.initialize()
+        println("TGLIVE: UpdatesHandler set successfully - Handler active: ${this.updatesHandler != null}")
+    }
+    
+    /**
+     * Subscribe to group call updates for a specific group call
+     * This ensures we receive INSTANT real-time updates for the group call
+     */
+    suspend fun subscribeToGroupCallUpdates(groupCallId: Int): Boolean {
+        return try {
+            println("TGLIVE: 🔔 Subscribing to INSTANT group call updates for call $groupCallId")
+            
+            // 1. Load group call participants to ensure we get updates
+            val loadResult = send(TdApi.LoadGroupCallParticipants(groupCallId, 100))
+            
+            // 2. Get the current group call to ensure we're subscribed
+            val getCallResult = send(TdApi.GetGroupCall(groupCallId))
+            
+            when (loadResult.constructor) {
+                TdApi.Ok.CONSTRUCTOR -> {
+                    println("TGLIVE: ✅ Successfully subscribed to INSTANT updates for group call $groupCallId")
+                    
+                    // Also verify the call exists
+                    when (getCallResult.constructor) {
+                        TdApi.GroupCall.CONSTRUCTOR -> {
+                            val groupCall = getCallResult as TdApi.GroupCall
+                            println("TGLIVE: ✅ Group call verified - isActive: ${groupCall.isActive}, participants: ${groupCall.participantCount}")
+                        }
+                        else -> {
+                            println("TGLIVE: ⚠️ Group call verification failed, but subscription may still work")
+                        }
+                    }
+                    
+                    true
+                }
+                TdApi.Error.CONSTRUCTOR -> {
+                    val error = loadResult as TdApi.Error
+                    println("TGLIVE: ⚠️ Failed to subscribe to group call updates: ${error.message}")
+                    
+                    // Still try to get the call info - we might get some updates anyway
+                    when (getCallResult.constructor) {
+                        TdApi.GroupCall.CONSTRUCTOR -> {
+                            println("TGLIVE: ✅ Group call exists, may still get some updates")
+                            true
+                        }
+                        else -> {
+                            println("TGLIVE: ❌ Group call doesn't exist")
+                            false
+                        }
+                    }
+                }
+                else -> {
+                    println("TGLIVE: ⚠️ Unexpected result subscribing to group call updates")
+                    true
+                }
+            }
+        } catch (e: Exception) {
+            println("TGLIVE: ❌ Exception subscribing to group call updates: ${e.message}")
+            false
+        }
+    }
+    
+
+    
+    /**
+     * Subscribe to chat updates for a specific chat
+     * This ensures we get INSTANT notifications when video chats start/end
+     */
+    suspend fun subscribeToChatUpdates(chatId: Long): Boolean {
+        return try {
+            println("TGLIVE: 🔔 Subscribing to INSTANT chat updates for chat $chatId")
+            
+            // 1. Get the chat to ensure we're subscribed to its updates
+            val getChatResult = send(TdApi.GetChat(chatId))
+            
+            when (getChatResult.constructor) {
+                TdApi.Chat.CONSTRUCTOR -> {
+                    val chat = getChatResult as TdApi.Chat
+                    println("TGLIVE: ✅ Successfully subscribed to INSTANT updates for chat: ${chat.title}")
+                    
+                    // 2. CRITICAL: Open the chat to ensure we get updates
+                    val openChatResult = send(TdApi.OpenChat(chatId))
+                    when (openChatResult.constructor) {
+                        TdApi.Ok.CONSTRUCTOR -> {
+                            println("TGLIVE: ✅ Chat opened successfully - updates should flow")
+                        }
+                        else -> {
+                            println("TGLIVE: ⚠️ Failed to open chat, but may still get updates")
+                        }
+                    }
+                    
+                    // 3. Check current video chat status
+                    if (chat.videoChat != null && chat.videoChat.groupCallId != 0) {
+                        println("TGLIVE: 🎥 Chat has active video chat: ${chat.videoChat.groupCallId}")
+                    } else {
+                        println("TGLIVE: 📵 Chat has no active video chat")
+                    }
+                    
+                    true
+                }
+                TdApi.Error.CONSTRUCTOR -> {
+                    val error = getChatResult as TdApi.Error
+                    println("TGLIVE: ❌ Failed to subscribe to chat updates: ${error.message}")
+                    false
+                }
+                else -> {
+                    println("TGLIVE: ⚠️ Unexpected result subscribing to chat updates")
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            println("TGLIVE: ❌ Exception subscribing to chat updates: ${e.message}")
+            false
+        }
+    }
+    
+    /**
+     * Enable updates reception - this is CRITICAL for real-time updates
+     */
+    private fun enableUpdatesReception() {
+        try {
+            println("TGLIVE: 🔥 Enabling updates reception")
+            
+            // Force TDLib to start sending updates by making a simple request
+            client?.send(TdApi.GetMe()) { result ->
+                when (result?.constructor) {
+                    TdApi.User.CONSTRUCTOR -> {
+                        val user = result as TdApi.User
+                        println("TGLIVE: ✅ Connected as: ${user.firstName} ${user.lastName}")
+                        println("TGLIVE: ✅ Updates should now be flowing")
+                    }
+                    TdApi.Error.CONSTRUCTOR -> {
+                        val error = result as TdApi.Error
+                        println("TGLIVE: ⚠️ GetMe error (but updates may still work): ${error.message}")
+                    }
+                    else -> {
+                        println("TGLIVE: ⚠️ Unexpected GetMe result: ${result?.javaClass?.simpleName}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            println("TGLIVE: Exception enabling updates reception: ${e.message}")
+        }
+    }
+    
+    /**
+     * Test if we're receiving ANY TDLib updates at all
+     */
+    fun testUpdatesReception(): String {
+        return try {
+            val clientActive = client != null
+            val handlerSet = updatesHandler != null
+            "Client Active: $clientActive, Handler Set: $handlerSet"
+        } catch (e: Exception) {
+            "Error testing updates: ${e.message}"
+        }
+    }
+    
+    /**
+     * Get the current UpdatesHandler
+     */
+    fun getUpdatesHandler(): UpdatesHandler? {
+        return updatesHandler
     }
 }
 
