@@ -210,8 +210,8 @@ class ChannelInfoActivity : AppCompatActivity() {
             // Display channel title in bottom bar
             binding.tvChannelTitle.text = channelInfo.title
 
-            // TODO: Load and display profile picture in bottom bar
-            // For now, we'll use a placeholder
+            // Load and display profile picture
+            loadChannelProfilePicture(channelInfo.photo)
 
             println("TGLIVE: Channel info displayed - Title: ${channelInfo.title}, Members: ${channelInfo.memberCount}")
 
@@ -823,20 +823,20 @@ class ChannelInfoActivity : AppCompatActivity() {
      */
     private fun updateModalContent() {
         currentChannelInfo?.let { channelInfo ->
-            // Set profile pictures (both header and modal)
-            // TODO: Load actual profile picture from channelInfo.photo
-            
+            // Load and set profile pictures
+            loadModalProfilePicture(channelInfo.photo)
+
             // Set channel title
             binding.tvModalChannelTitle.text = channelInfo.title
-            
+
             // Set channel handle
             val handle = if (channelInfo.username.isNotEmpty()) "@${channelInfo.username}" else ""
             binding.tvModalChannelHandle.text = handle
             binding.tvModalChannelHandle.visibility = if (handle.isNotEmpty()) View.VISIBLE else View.GONE
-            
+
             // Set member count
             binding.tvModalMemberCount.text = formatMemberCountNumber(channelInfo.memberCount)
-            
+
             // Set description
             binding.tvModalChannelDescription.text = channelInfo.description
             binding.tvModalChannelDescription.visibility = if (channelInfo.description.isNotEmpty()) View.VISIBLE else View.GONE
@@ -894,6 +894,95 @@ class ChannelInfoActivity : AppCompatActivity() {
         binding.ivGiftButton.setOnClickListener {
             showUpdateNotification("Gift functionality not implemented yet")
         }
+    }
+
+    /**
+     * Load channel profile picture from Telegram photo data
+     */
+    private fun loadChannelProfilePicture(photoInfo: org.drinkless.tdlib.TdApi.ChatPhotoInfo?) {
+        if (photoInfo?.small?.local?.path?.isNotEmpty() == true) {
+            try {
+                // Load small profile picture from local path
+                val bitmap = android.graphics.BitmapFactory.decodeFile(photoInfo.small.local.path)
+                if (bitmap != null) {
+                    val circularBitmap = createCircularBitmap(bitmap)
+                    binding.ivChannelProfileCenter.setImageBitmap(circularBitmap)
+                    println("TGLIVE: Channel profile picture loaded successfully")
+                } else {
+                    // Use default image if bitmap is null
+                    binding.ivChannelProfileCenter.setImageResource(R.mipmap.ic_launcher)
+                    println("TGLIVE: Failed to decode channel profile picture, using default")
+                }
+            } catch (e: Exception) {
+                // Use default image on error
+                binding.ivChannelProfileCenter.setImageResource(R.mipmap.ic_launcher)
+                println("TGLIVE: Error loading channel profile picture: ${e.message}")
+            }
+        } else {
+            // Use default image if no photo available
+            binding.ivChannelProfileCenter.setImageResource(R.mipmap.ic_launcher)
+            println("TGLIVE: No channel profile picture available, using default")
+        }
+    }
+
+    /**
+     * Load modal profile picture from Telegram photo data
+     */
+    private fun loadModalProfilePicture(photoInfo: org.drinkless.tdlib.TdApi.ChatPhotoInfo?) {
+        if (photoInfo?.small?.local?.path?.isNotEmpty() == true) {
+            try {
+                // Load small profile picture from local path
+                val bitmap = android.graphics.BitmapFactory.decodeFile(photoInfo.small.local.path)
+                if (bitmap != null) {
+                    val circularBitmap = createCircularBitmap(bitmap)
+                    binding.ivModalProfilePicture.setImageBitmap(circularBitmap)
+                    println("TGLIVE: Modal profile picture loaded successfully")
+                } else {
+                    // Use default image if bitmap is null
+                    binding.ivModalProfilePicture.setImageResource(R.mipmap.ic_launcher)
+                    println("TGLIVE: Failed to decode modal profile picture, using default")
+                }
+            } catch (e: Exception) {
+                // Use default image on error
+                binding.ivModalProfilePicture.setImageResource(R.mipmap.ic_launcher)
+                println("TGLIVE: Error loading modal profile picture: ${e.message}")
+            }
+        } else {
+            // Use default image if no photo available
+            binding.ivModalProfilePicture.setImageResource(R.mipmap.ic_launcher)
+            println("TGLIVE: No modal profile picture available, using default")
+        }
+    }
+
+    /**
+     * Create a circular bitmap from a square bitmap
+     */
+    private fun createCircularBitmap(bitmap: android.graphics.Bitmap): android.graphics.Bitmap {
+        val size = minOf(bitmap.width, bitmap.height)
+        val output = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+
+        val canvas = android.graphics.Canvas(output)
+        val paint = android.graphics.Paint().apply {
+            isAntiAlias = true
+        }
+
+        val rect = android.graphics.Rect(0, 0, size, size)
+        val rectF = android.graphics.RectF(rect)
+
+        canvas.drawOval(rectF, paint)
+
+        paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC_IN)
+
+        val sourceRect = android.graphics.Rect(
+            (bitmap.width - size) / 2,
+            (bitmap.height - size) / 2,
+            (bitmap.width + size) / 2,
+            (bitmap.height + size) / 2
+        )
+
+        canvas.drawBitmap(bitmap, sourceRect, rect, paint)
+
+        return output
     }
 
     // Helper methods
