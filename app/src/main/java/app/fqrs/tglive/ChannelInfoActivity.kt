@@ -83,13 +83,16 @@ class ChannelInfoActivity : AppCompatActivity() {
         
         // Initialize Telegram components
         initializeTelegramComponents()
-        
-        // Initialize participant adapter and RecyclerView
+
+        // Initialize participant adapter (for potential future use)
         setupParticipantRecyclerView()
-        
+
+        // Setup TikTok-style button listeners
+        setupTikTokButtonListeners()
+
         // Setup modal functionality
         setupModalFunctionality()
-        
+
         // Load fresh channel data
         loadChannelData()
     }
@@ -129,14 +132,13 @@ class ChannelInfoActivity : AppCompatActivity() {
     }
     
     /**
-     * Initialize participant adapter and RecyclerView
+     * Initialize participant adapter (for potential future use)
+     * Note: TikTok-style UI doesn't show participant list
      */
     private fun setupParticipantRecyclerView() {
+        // Participant list not used in TikTok-style UI
+        // Keeping adapter for potential future features
         participantAdapter = ParticipantAdapter(this)
-        binding.rvParticipants.apply {
-            layoutManager = LinearLayoutManager(this@ChannelInfoActivity)
-            adapter = participantAdapter
-        }
     }
     
     /**
@@ -178,14 +180,8 @@ class ChannelInfoActivity : AppCompatActivity() {
                 println("TGLIVE: Client status: $clientStatus")
                 println("TGLIVE: ${updatesHandler.getUpdateStats()}")
                 
-                // Update real-time status indicator
-                runOnUiThread {
-                    if (updatesWorking) {
-                        binding.vStatusIndicator.backgroundTintList = getColorStateList(android.R.color.holo_green_dark)
-                    } else {
-                        binding.vStatusIndicator.backgroundTintList = getColorStateList(android.R.color.holo_orange_dark)
-                    }
-                }
+                // Real-time status updates work without visual indicator in TikTok UI
+                println("TGLIVE: Real-time updates active: $updatesWorking")
                 
                 // Also set up a general update listener to see ALL updates
                 setupGeneralUpdateListener()
@@ -207,21 +203,18 @@ class ChannelInfoActivity : AppCompatActivity() {
     }
     
     /**
-     * Display channel information in UI (compact header)
+     * Display channel information in UI (TikTok style bottom bar)
      */
     private fun displayChannelInfo(channelInfo: ChannelInfo) {
         try {
-            // Display channel title in compact header
+            // Display channel title in bottom bar
             binding.tvChannelTitle.text = channelInfo.title
-            
-            // Display member count with icon in compact header
-            binding.tvMemberCount.text = formatMemberCount(channelInfo.memberCount)
-            
-            // TODO: Load and display profile picture
+
+            // TODO: Load and display profile picture in bottom bar
             // For now, we'll use a placeholder
-            
+
             println("TGLIVE: Channel info displayed - Title: ${channelInfo.title}, Members: ${channelInfo.memberCount}")
-            
+
         } catch (e: Exception) {
             println("TGLIVE: Exception displaying channel info: ${e.message}")
             e.printStackTrace()
@@ -298,40 +291,26 @@ class ChannelInfoActivity : AppCompatActivity() {
     }
     
     /**
-     * Display active video chat status (Telegram style)
+     * Display active video chat status (TikTok style)
      */
     private fun displayActiveVideoChat(groupCallInfo: GroupCallInfo) {
         println("TGLIVE: 🎨 DISPLAYING ACTIVE VIDEO CHAT")
         println("TGLIVE: Participants: ${groupCallInfo.participantCount}")
-        
-        // Hide no live stream section and show live stream section
-        binding.cvNoLiveStreamSection.visibility = View.GONE
-        binding.cvLiveStreamSection.visibility = View.VISIBLE
-        
-        println("TGLIVE: ✅ Live stream section made VISIBLE")
-        
+
+        // Hide stream ended message
+        binding.tvStreamEnded.visibility = View.GONE
+
+        // Show viewer count in top right
+        binding.llViewerCount.visibility = View.VISIBLE
+
         // Update participant count
-        val participantText = if (groupCallInfo.participantCount == 1) {
-            "1 participant"
-        } else {
-            "${groupCallInfo.participantCount} participants"
-        }
-        binding.tvParticipantCount.text = participantText
-        
-        println("TGLIVE: ✅ Participant text set to: '$participantText'")
-        
-        // Set up join button click listener
-        binding.btnJoinLiveStream.setOnClickListener {
-            // TODO: Implement join functionality
-            showUpdateNotification("Join functionality not implemented yet")
-        }
-        
-        // Set up refresh button click listener
-        // Refresh functionality is now available in the modal
-        
-        // Show participants section
-        binding.cvParticipantsSection.visibility = View.VISIBLE
-        
+        binding.tvViewerCount.text = groupCallInfo.participantCount.toString()
+
+        println("TGLIVE: ✅ Viewer count set to: ${groupCallInfo.participantCount}")
+
+        // Set up button click listeners
+        setupTikTokButtonListeners()
+
         // CRITICAL: Subscribe to group call updates for real-time participant changes
         lifecycleScope.launch {
             val subscribed = telegramClient.subscribeToGroupCallUpdates(groupCallInfo.id)
@@ -341,26 +320,26 @@ class ChannelInfoActivity : AppCompatActivity() {
                 println("TGLIVE: WARNING: Failed to subscribe to group call updates")
             }
         }
-        
+
         println("TGLIVE: Active video chat displayed - ${groupCallInfo.participantCount} participants")
     }
     
     /**
-     * Display no video chat status (Telegram style)
+     * Display no video chat status (TikTok style)
      */
     private fun displayNoVideoChat() {
         println("TGLIVE: 🎨 DISPLAYING NO VIDEO CHAT")
-        
-        // Show no live stream section and hide live stream section
-        binding.cvLiveStreamSection.visibility = View.GONE
-        binding.cvNoLiveStreamSection.visibility = View.VISIBLE
-        
-        println("TGLIVE: ✅ No live stream section made VISIBLE")
-        
-        // Hide participants section
-        binding.cvParticipantsSection.visibility = View.GONE
-        
-        println("TGLIVE: ✅ No video chat status displayed")
+
+        // Show stream ended message in center
+        binding.tvStreamEnded.visibility = View.VISIBLE
+
+        // Hide viewer count
+        binding.llViewerCount.visibility = View.GONE
+
+        // Set up button listeners for no-stream state
+        setupTikTokButtonListeners()
+
+        println("TGLIVE: ✅ Stream ended message displayed")
     }
     
     /**
@@ -456,13 +435,13 @@ class ChannelInfoActivity : AppCompatActivity() {
                         val groupCallInfo = groupCallManager.getGroupCall(update.groupCallId)
                         if (groupCallInfo != null) {
                             currentGroupCallInfo = groupCallInfo
-                            
+
                             // Update UI on main thread IMMEDIATELY
                             runOnUiThread {
                                 displayActiveVideoChat(groupCallInfo)
                                 showUpdateNotification("🔴 Live stream started!")
                             }
-                            
+
                             // Set up group call updates for the new call
                             setupGroupCallUpdates(update.groupCallId)
                         }
@@ -470,44 +449,38 @@ class ChannelInfoActivity : AppCompatActivity() {
                         println("TGLIVE: Error getting group call: ${e.message}")
                     }
                 }
-                
+
                 is ChannelUpdate.VideoChatEnded -> {
                     currentGroupCallInfo = null
-                    
+
                     // Cancel group call updates to save resources
                     groupCallUpdateJob?.cancel()
                     groupCallUpdateJob = null
-                    
+
                     // Update UI on main thread
                     runOnUiThread {
                         displayNoVideoChat()
                         showUpdateNotification("⚫ Live stream ended!")
-                        
-                        // Clear participant grid efficiently
-                        participantAdapter.clearParticipants()
-                        binding.llParticipantHeader.visibility = View.GONE
-                        binding.rvParticipants.visibility = View.GONE
                     }
                 }
-                
+
                 is ChannelUpdate.InfoChanged -> {
                     println("TGLIVE: 📝 CHANNEL INFO CHANGED")
                     currentChannelInfo = update.channelInfo
-                    
+
                     runOnUiThread {
                         displayChannelInfo(update.channelInfo)
                         showUpdateNotification("Channel information updated")
                     }
                 }
-                
+
                 is ChannelUpdate.MemberCountChanged -> {
                     println("TGLIVE: 👥 MEMBER COUNT CHANGED: ${update.newCount}")
-                    
+
                     runOnUiThread {
-                        binding.tvMemberCount.text = formatMemberCount(update.newCount)
                         showUpdateNotification("Member count updated: ${formatMemberCount(update.newCount)}")
                     }
-                    
+
                     // Update current channel info if available
                     currentChannelInfo?.let { channelInfo ->
                         currentChannelInfo = channelInfo.copy(memberCount = update.newCount)
@@ -528,92 +501,72 @@ class ChannelInfoActivity : AppCompatActivity() {
             when (update) {
                 is GroupCallUpdate.ParticipantJoined -> {
                     println("TGLIVE: 👤 PARTICIPANT JOINED: ${update.participant.displayName}")
-                    
+
                     runOnUiThread {
                         currentGroupCallInfo?.let { groupCall ->
                             val newCount = groupCall.participantCount + 1
-                            binding.tvParticipantCount.text = "$newCount participants"
+                            // Update viewer count in TikTok-style UI
+                            binding.tvViewerCount.text = newCount.toString()
                             currentGroupCallInfo = groupCall.copy(participantCount = newCount)
                         }
-                        
-                        participantAdapter.addParticipant(update.participant)
-                        showUpdateNotification("${update.participant.displayName} joined the call")
-                        
-                        if (binding.llParticipantHeader.visibility != View.VISIBLE) {
-                            binding.llParticipantHeader.visibility = View.VISIBLE
-                            binding.rvParticipants.visibility = View.VISIBLE
-                        }
+
+                        showUpdateNotification("${update.participant.displayName} joined")
                     }
                 }
-                
+
                 is GroupCallUpdate.ParticipantLeft -> {
                     println("TGLIVE: 👤 PARTICIPANT LEFT")
-                    
+
                     runOnUiThread {
                         currentGroupCallInfo?.let { groupCall ->
                             val newCount = maxOf(0, groupCall.participantCount - 1)
-                            binding.tvParticipantCount.text = "$newCount participants"
+                            // Update viewer count in TikTok-style UI
+                            binding.tvViewerCount.text = newCount.toString()
                             currentGroupCallInfo = groupCall.copy(participantCount = newCount)
                         }
-                        
-                        participantAdapter.removeParticipant(update.participantId)
-                        showUpdateNotification("Participant left the call")
-                        
-                        if (participantAdapter.getAllParticipants().isEmpty()) {
-                            binding.llParticipantHeader.visibility = View.GONE
-                            binding.rvParticipants.visibility = View.GONE
-                        }
+
+                        showUpdateNotification("Participant left")
                     }
                 }
-                
+
                 is GroupCallUpdate.ParticipantStatusChanged -> {
                     println("TGLIVE: 🔄 PARTICIPANT STATUS CHANGED: ${update.participant.displayName}")
-                    
+
                     runOnUiThread {
-                        participantAdapter.updateParticipantStatus(update.participant)
                         showUpdateNotification("${update.participant.displayName} status updated")
                     }
                 }
-                
+
                 is GroupCallUpdate.StatusChanged -> {
                     currentGroupCallInfo = update.groupCallInfo
-                    
+
                     runOnUiThread {
                         if (update.groupCallInfo.isActive) {
                             displayActiveVideoChat(update.groupCallInfo)
-                            showUpdateNotification("🔴 ${update.groupCallInfo.participantCount} participants")
+                            showUpdateNotification("🔴 ${update.groupCallInfo.participantCount} viewers")
                         } else {
                             displayNoVideoChat()
                             showUpdateNotification("⚫ Stream ended")
-                            
-                            // Efficiently clear participants
-                            participantAdapter.clearParticipants()
-                            binding.llParticipantHeader.visibility = View.GONE
-                            binding.rvParticipants.visibility = View.GONE
                         }
                     }
                 }
-                
+
                 is GroupCallUpdate.CallEnded -> {
                     println("TGLIVE: 🚨 UI RECEIVED CALL ENDED 🚨")
-                    
+
                     currentGroupCallInfo = null
                     isJoinedToCall = false
-                    
+
                     // Cancel group call updates
                     groupCallUpdateJob?.cancel()
                     groupCallUpdateJob = null
-                    
+
                     println("TGLIVE: 🎯 UPDATING UI FOR CALL ENDED")
                     runOnUiThread {
                         println("TGLIVE: 🔴 DISPLAYING NO VIDEO CHAT")
                         displayNoVideoChat()
                         showUpdateNotification("⚫ Live stream ended")
-                        
-                        participantAdapter.clearParticipants()
-                        binding.llParticipantHeader.visibility = View.GONE
-                        binding.rvParticipants.visibility = View.GONE
-                        
+
                         println("TGLIVE: ✅ CALL ENDED UI UPDATE COMPLETED")
                     }
                 }
@@ -801,27 +754,11 @@ class ChannelInfoActivity : AppCompatActivity() {
      * Setup modal functionality for channel details
      */
     private fun setupModalFunctionality() {
-        // Channel header click to show modal
-        binding.llChannelHeader.setOnClickListener {
-            showChannelModal()
-        }
-        
         // Modal overlay click to hide modal
         binding.flModalOverlay.setOnClickListener {
             hideChannelModal()
         }
-        
-        // Close button click
-        binding.btnCloseModal.setOnClickListener {
-            hideChannelModal()
-        }
-        
-        // Modal refresh button
-        binding.btnModalRefresh.setOnClickListener {
-            hideChannelModal()
-            refreshChannelData()
-        }
-        
+
         // Prevent modal content clicks from closing modal
         binding.cvChannelModal.setOnClickListener {
             // Do nothing - prevents click from propagating to overlay
@@ -929,15 +866,57 @@ class ChannelInfoActivity : AppCompatActivity() {
         }
     }
     
+    /**
+     * Set up TikTok-style button click listeners
+     */
+    private fun setupTikTokButtonListeners() {
+        // Back button
+        binding.ivBack.setOnClickListener {
+            finish()
+        }
+
+        // Share button
+        binding.ivShare.setOnClickListener {
+            showUpdateNotification("Share functionality not implemented yet")
+        }
+
+        // Comment button
+        binding.ivCommentButton.setOnClickListener {
+            showUpdateNotification("Comment functionality not implemented yet")
+        }
+
+        // Channel info section (bottom bar) - show modal
+        binding.llChannelInfo.setOnClickListener {
+            showChannelModal()
+        }
+
+        // Gift button
+        binding.ivGiftButton.setOnClickListener {
+            showUpdateNotification("Gift functionality not implemented yet")
+        }
+    }
+
     // Helper methods
     private fun showError(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+
+        // Show error message in center
+        binding.tvErrorMessage.text = message
+        binding.tvErrorMessage.visibility = View.VISIBLE
+        binding.tvStreamEnded.visibility = View.GONE
+        binding.llViewerCount.visibility = View.GONE
+
+        // Set channel title to error
         binding.tvChannelTitle.text = "Error"
-        binding.tvMemberCount.text = "0 members"
     }
     
     private fun showLoading(show: Boolean) {
         if (show) {
+            // Hide other messages when loading
+            binding.tvStreamEnded.visibility = View.GONE
+            binding.tvErrorMessage.visibility = View.GONE
+            binding.llViewerCount.visibility = View.GONE
+
             binding.tvChannelTitle.text = "Loading..."
         }
     }
@@ -953,11 +932,6 @@ class ChannelInfoActivity : AppCompatActivity() {
     private fun showUpdateNotification(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         println("TGLIVE: Update notification: $message")
-        
-        // Update status indicator to show activity
-        runOnUiThread {
-            binding.vStatusIndicator.backgroundTintList = getColorStateList(android.R.color.holo_green_dark)
-        }
     }
     
     private fun getErrorMessage(error: ChannelError): String {
