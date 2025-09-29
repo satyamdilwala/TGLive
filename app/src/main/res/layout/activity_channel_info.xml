@@ -7,7 +7,40 @@
     android:background="@android:color/black"
     tools:context=".ui.ChannelInfoActivity">
 
-    <!-- Main Live Stream Content Area -->
+    <!-- High-Performance Video Player Container -->
+    <FrameLayout
+        android:id="@+id/flVideoPlayerContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="120dp"
+        android:layout_marginBottom="120dp"
+        android:background="#000000"
+        android:visibility="visible">
+
+        <!-- Fast SurfaceView for Video Rendering -->
+        <SurfaceView
+            android:id="@+id/svVideoPlayer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#000000" />
+
+        <!-- Camera Off Message Overlay -->
+        <TextView
+            android:id="@+id/tvCameraOff"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="Camera Off"
+            android:textColor="@android:color/white"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:background="#80000000"
+            android:padding="24dp"
+            android:visibility="visible" />
+
+    </FrameLayout>
+
+    <!-- Main Background (when no video) -->
     <View
         android:id="@+id/vLiveStreamBackground"
         android:layout_width="match_parent"

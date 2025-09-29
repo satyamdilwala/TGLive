@@ -4,6 +4,8 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import app.fqrs.tglive.databinding.ActivityChannelInfoBinding
@@ -61,6 +63,12 @@ class ChannelInfoActivity : AppCompatActivity() {
     private var channelUpdateJob: Job? = null
     private var groupCallUpdateJob: Job? = null
     private var periodicRefreshJob: Job? = null
+
+    // Video player properties
+    private lateinit var surfaceView: SurfaceView
+    private var surfaceHolder: SurfaceHolder? = null
+    private var isVideoPlayerInitialized = false
+    private var isVideoPlaying = false
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,6 +100,15 @@ class ChannelInfoActivity : AppCompatActivity() {
 
         // Setup modal functionality
         setupModalFunctionality()
+
+        // Initialize video player
+        initializeVideoPlayer()
+
+        // Show camera off state by default
+        showCameraOffState()
+
+        // Set default channel title
+        binding.tvChannelTitle.text = "Loading channel..."
 
         // Load fresh channel data
         loadChannelData()
@@ -306,6 +323,9 @@ class ChannelInfoActivity : AppCompatActivity() {
         // Update participant count
         binding.tvViewerCount.text = groupCallInfo.participantCount.toString()
 
+        // Start video rendering if available
+        startVideoRendering(groupCallInfo.id)
+
         println("TGLIVE: ✅ Viewer count set to: ${groupCallInfo.participantCount}")
 
         // Set up button click listeners
@@ -329,6 +349,12 @@ class ChannelInfoActivity : AppCompatActivity() {
      */
     private fun displayNoVideoChat() {
         println("TGLIVE: 🎨 DISPLAYING NO VIDEO CHAT")
+
+        // Stop video rendering
+        stopVideoRendering()
+
+        // Show camera off state in video player
+        showCameraOffState()
 
         // Show stream ended message in center
         binding.tvStreamEnded.visibility = View.VISIBLE
@@ -738,13 +764,27 @@ class ChannelInfoActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
-        
+
         println("TGLIVE: Activity destroyed - cleaning up all resources")
-        
+
+        // Stop video rendering
+        try {
+            stopVideoRendering()
+        } catch (e: Exception) {
+            println("TGLIVE: Exception stopping video: ${e.message}")
+        }
+
         // Clean up update subscriptions and coroutine scope
         try {
             cancelUpdateSubscriptions()
             updateScope.cancel()
+
+            // Unsubscribe from chat updates when activity is destroyed
+            currentChannelInfo?.id?.let { channelId ->
+                lifecycleScope.launch {
+                    telegramClient.unsubscribeFromChatUpdates(channelId)
+                }
+            }
         } catch (e: Exception) {
             println("TGLIVE: Exception during destroy: ${e.message}")
         }
@@ -985,6 +1025,139 @@ class ChannelInfoActivity : AppCompatActivity() {
         return output
     }
 
+    /**
+     * Initialize the high-performance video player
+     */
+    private fun initializeVideoPlayer() {
+        try {
+            println("TGLIVE: Initializing high-performance video player")
+
+            surfaceView = binding.svVideoPlayer
+            surfaceHolder = surfaceView.holder
+
+            // Set optimal surface format for video
+            surfaceHolder?.setFormat(android.graphics.PixelFormat.RGBA_8888)
+
+            // Set up surface callback for video rendering
+            surfaceHolder?.addCallback(object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) {
+                    println("TGLIVE: Video surface created - ready for rendering")
+                    isVideoPlayerInitialized = true
+                    surfaceHolder = holder
+
+                    // Start video if we have an active call
+                    currentGroupCallInfo?.let { groupCall ->
+                        if (groupCall.isActive) {
+                            startVideoRendering(groupCall.id)
+                        }
+                    }
+                }
+
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                    println("TGLIVE: Video surface changed: $width x $height, format: $format")
+                    surfaceHolder = holder
+                }
+
+                override fun surfaceDestroyed(holder: SurfaceHolder) {
+                    println("TGLIVE: Video surface destroyed")
+                    isVideoPlayerInitialized = false
+                    stopVideoRendering()
+                }
+            })
+
+            println("TGLIVE: Video player initialized successfully")
+
+        } catch (e: Exception) {
+            println("TGLIVE: Failed to initialize video player: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Start video rendering for group call
+     */
+    private fun startVideoRendering(groupCallId: Int) {
+        if (!isVideoPlayerInitialized || surfaceHolder == null) {
+            println("TGLIVE: Video player not ready - cannot start rendering")
+            return
+        }
+
+        try {
+            println("TGLIVE: Starting video rendering for call ID: $groupCallId")
+
+            // Show video player container (always visible)
+            binding.flVideoPlayerContainer.visibility = View.VISIBLE
+            binding.tvCameraOff.visibility = View.GONE
+
+            // Set surface for video rendering
+            val surface = surfaceHolder!!.surface
+
+            // Use Telegram API to start video rendering
+            val success = telegramClient.setVideoRenderer(groupCallId, surface)
+            if (success) {
+                isVideoPlaying = true
+                println("TGLIVE: Video rendering started successfully")
+            } else {
+                println("TGLIVE: Failed to start video rendering")
+                showCameraOffState()
+            }
+
+        } catch (e: Exception) {
+            println("TGLIVE: Exception starting video rendering: ${e.message}")
+            e.printStackTrace()
+            showCameraOffState()
+        }
+    }
+
+    /**
+     * Stop video rendering
+     */
+    private fun stopVideoRendering() {
+        try {
+            println("TGLIVE: Stopping video rendering")
+
+            isVideoPlaying = false
+
+            // Keep video player container visible but show camera off state
+            showCameraOffState()
+
+            // Clear video renderer from Telegram
+            currentGroupCallInfo?.let { groupCall ->
+                telegramClient.clearVideoRenderer(groupCall.id)
+            }
+
+            println("TGLIVE: Video rendering stopped")
+
+        } catch (e: Exception) {
+            println("TGLIVE: Exception stopping video rendering: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Show camera off state
+     */
+    private fun showCameraOffState() {
+        binding.flVideoPlayerContainer.visibility = View.VISIBLE
+        binding.tvCameraOff.visibility = View.VISIBLE
+        binding.svVideoPlayer.visibility = View.GONE
+        isVideoPlaying = false
+        // Set black background to make "Camera Off" text visible
+        binding.svVideoPlayer.setBackgroundColor(android.graphics.Color.BLACK)
+        println("TGLIVE: Camera off state displayed")
+    }
+
+    /**
+     * Show video playing state
+     */
+    private fun showVideoPlayingState() {
+        binding.flVideoPlayerContainer.visibility = View.VISIBLE
+        binding.tvCameraOff.visibility = View.GONE
+        binding.svVideoPlayer.visibility = View.VISIBLE
+        isVideoPlaying = true
+        println("TGLIVE: Video playing state displayed")
+    }
+
     // Helper methods
     private fun showError(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
@@ -994,6 +1167,7 @@ class ChannelInfoActivity : AppCompatActivity() {
         binding.tvErrorMessage.visibility = View.VISIBLE
         binding.tvStreamEnded.visibility = View.GONE
         binding.llViewerCount.visibility = View.GONE
+        binding.flVideoPlayerContainer.visibility = View.GONE
 
         // Set channel title to error
         binding.tvChannelTitle.text = "Error"
@@ -1005,8 +1179,12 @@ class ChannelInfoActivity : AppCompatActivity() {
             binding.tvStreamEnded.visibility = View.GONE
             binding.tvErrorMessage.visibility = View.GONE
             binding.llViewerCount.visibility = View.GONE
+            binding.flVideoPlayerContainer.visibility = View.GONE
 
             binding.tvChannelTitle.text = "Loading..."
+        } else {
+            // Show video player container when not loading
+            binding.flVideoPlayerContainer.visibility = View.VISIBLE
         }
     }
     

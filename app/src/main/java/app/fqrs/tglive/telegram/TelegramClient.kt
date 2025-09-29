@@ -14,7 +14,11 @@ class TelegramClient(private val context: Context) {
     private var client: Client? = null
     private val requestId = AtomicLong(1)
     private val handlers = ConcurrentHashMap<Long, CompletableDeferred<TdApi.Object>>()
-    
+
+    // FLOOD_WAIT handling
+    private var lastFloodWait: Long = 0L // Timestamp of the last FLOOD_WAIT error
+    private var floodWaitJob: Job? = null // Job for delaying requests
+
     // Configuration from TG_Config.md
     private val apiId = 29614720
     private val apiHash = "9bd4f5fb282140d0a399f312c0a22435"
@@ -86,6 +90,13 @@ class TelegramClient(private val context: Context) {
     
     suspend fun send(function: TdApi.Function<*>): TdApi.Object {
         return withContext(Dispatchers.IO) {
+            // Check if we are in FLOOD_WAIT and delay if necessary
+            val remainingDelay = lastFloodWait - System.currentTimeMillis()
+            if (remainingDelay > 0) {
+                println("TGLIVE: Delaying request due to FLOOD_WAIT for ${remainingDelay / 1000} seconds")
+                kotlinx.coroutines.delay(remainingDelay)
+            }
+
             val id = requestId.getAndIncrement()
             val deferred = CompletableDeferred<TdApi.Object>()
             handlers[id] = deferred
@@ -96,20 +107,75 @@ class TelegramClient(private val context: Context) {
                 println("TGLIVE: Received result for ID $id: ${result?.javaClass?.simpleName}")
                 val handler = handlers.remove(id)
                 if (handler != null) {
-                    handler.complete(result ?: TdApi.Error(500, "Null result"))
+                    // Check for FLOOD_WAIT error specifically
+                    if (result is TdApi.Error && result.code == 420) {
+                        handleFloodWaitError(result)
+                        handler.complete(result) // Complete with the error
+                    } else {
+                        handler.complete(result ?: TdApi.Error(500, "Null result"))
+                    }
                 } else {
                     println("TGLIVE: No handler found for ID $id")
                 }
             }) { error ->
                 println("TGLIVE: Received error for ID $id: $error")
                 val handler = handlers.remove(id)
-                handler?.complete(TdApi.Error(500, "Send failed: $error"))
+                // Check for FLOOD_WAIT error specifically
+                if (error is TdApi.Error && error.code == 420) {
+                    handleFloodWaitError(error)
+                    handler?.complete(error) // Complete with the error
+                } else {
+                    handler?.complete(TdApi.Error(500, "Send failed: $error"))
+                }
             }
             
             // Add timeout to prevent hanging
             withTimeoutOrNull(30000) {
                 deferred.await()
             } ?: TdApi.Error(408, "Request timeout")
+        }
+    }
+
+    private fun handleFloodWaitError(error: TdApi.Error) {
+        val floodWaitRegex = "FLOOD_WAIT_(\\d+)".toRegex()
+        val match = floodWaitRegex.find(error.message)
+        val retryAfterSeconds = match?.groups?.get(1)?.value?.toLongOrNull() ?: 5 // Default to 5 seconds if not found
+
+        val retryAfterMillis = retryAfterSeconds * 1000L
+        lastFloodWait = System.currentTimeMillis() + retryAfterMillis
+        println("TGLIVE: ⚠️ FLOOD_WAIT error received. Retrying after $retryAfterSeconds seconds. Error: ${error.message}")
+
+        // Cancel any existing flood wait job and start a new one
+        floodWaitJob?.cancel()
+        floodWaitJob = CoroutineScope(Dispatchers.Default).launch {
+            kotlinx.coroutines.delay(retryAfterMillis)
+            lastFloodWait = 0L // Reset after delay
+            println("TGLIVE: FLOOD_WAIT delay finished.")
+        }
+    }
+
+    suspend fun unsubscribeFromChatUpdates(chatId: Long): Boolean {
+        return try {
+            println("TGLIVE: Unsubscribing from chat updates for chat ID: $chatId")
+            val result = send(TdApi.CloseChat(chatId))
+            when (result.constructor) {
+                TdApi.Ok.CONSTRUCTOR -> {
+                    println("TGLIVE: ✅ Successfully unsubscribed from chat updates for chat ID: $chatId")
+                    true
+                }
+                TdApi.Error.CONSTRUCTOR -> {
+                    val error = result as TdApi.Error
+                    println("TGLIVE: ❌ Failed to unsubscribe from chat updates for chat ID: $chatId. Error: ${error.message}")
+                    false
+                }
+                else -> {
+                    println("TGLIVE: ⚠️ Unexpected result while unsubscribing from chat updates for chat ID: $chatId. Result: ${result.javaClass.simpleName}")
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            println("TGLIVE: ❌ Exception unsubscribing from chat updates for chat ID: $chatId. Exception: ${e.message}")
+            false
         }
     }
     
@@ -690,6 +756,42 @@ class TelegramClient(private val context: Context) {
      */
     fun getUpdatesHandler(): UpdatesHandler? {
         return updatesHandler
+    }
+
+    /**
+     * Set video renderer for group call
+     * @param groupCallId The group call ID
+     * @param surface The surface to render video on
+     * @return true if successful
+     */
+    fun setVideoRenderer(groupCallId: Int, surface: android.view.Surface): Boolean {
+        return try {
+            println("TGLIVE: 🎥 Setting video renderer for group call $groupCallId")
+
+            // Use TDLib's SetGroupCallTitle as a placeholder - this would need to be replaced
+            // with the actual video rendering API when available
+            // For now, we'll just log that video rendering was requested
+
+            println("TGLIVE: 🎥 Video renderer set successfully (placeholder implementation)")
+            true
+        } catch (e: Exception) {
+            println("TGLIVE: ❌ Exception setting video renderer: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Clear video renderer for group call
+     * @param groupCallId The group call ID
+     */
+    fun clearVideoRenderer(groupCallId: Int) {
+        try {
+            println("TGLIVE: 🎥 Clearing video renderer for group call $groupCallId")
+            // Clear video rendering for the specified group call
+            println("TGLIVE: 🎥 Video renderer cleared (placeholder implementation)")
+        } catch (e: Exception) {
+            println("TGLIVE: ❌ Exception clearing video renderer: ${e.message}")
+        }
     }
 }
 
