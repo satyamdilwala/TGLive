@@ -501,6 +501,7 @@ class UpdatesHandler(private val client: TelegramClient) {
         
         return app.fqrs.tglive.models.GroupCallParticipant(
             participantId = participant.participantId,
+            tdId = getTdIdFromMessageSender(participant.participantId),
             displayName = displayName,
             profilePhoto = profilePhoto,
             isMuted = participant.isMutedForAllUsers || participant.isMutedForCurrentUser,
@@ -511,6 +512,17 @@ class UpdatesHandler(private val client: TelegramClient) {
         )
     }
     
+    /**
+     * Helper to extract TDLib User ID from TdApi.MessageSender
+     */
+    private fun getTdIdFromMessageSender(messageSender: TdApi.MessageSender): Long {
+        return when (messageSender.constructor) {
+            TdApi.MessageSenderUser.CONSTRUCTOR -> (messageSender as TdApi.MessageSenderUser).userId
+            TdApi.MessageSenderChat.CONSTRUCTOR -> (messageSender as TdApi.MessageSenderChat).chatId // Chats can also be participants
+            else -> 0L // Default or error case
+        }
+    }
+
     /**
      * Get display name for a participant
      */

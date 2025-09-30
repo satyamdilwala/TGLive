@@ -19,7 +19,7 @@
     <!-- Input Colors -->
     <color name="input_background">#F5F5F5</color>
     <color name="input_border">#DDDDDD</color>
-    <color name="input_text">#000000</color>
+    <color name="input_text">#444444</color>
     
     <!-- Status Colors -->
     <color name="success">#4CAF50</color>

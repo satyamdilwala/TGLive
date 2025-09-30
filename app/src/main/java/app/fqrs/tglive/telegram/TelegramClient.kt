@@ -759,38 +759,42 @@ class TelegramClient(private val context: Context) {
     }
 
     /**
-     * Set video renderer for group call
-     * @param groupCallId The group call ID
-     * @param surface The surface to render video on
-     * @return true if successful
+     * Set video renderer for a specific participant in a group call.
+     * @param groupCallId The group call ID.
+     * @param participantUserId The user ID of the participant whose video is to be rendered.
+     * @param surface The surface to render video on.
+     * @return true if successful.
      */
-    fun setVideoRenderer(groupCallId: Int, surface: android.view.Surface): Boolean {
+    suspend fun setVideoRenderer(groupCallId: Int, participantUserId: Long, surface: android.view.Surface): Boolean {
         return try {
-            println("TGLIVE: 🎥 Setting video renderer for group call $groupCallId")
-
-            // Use TDLib's SetGroupCallTitle as a placeholder - this would need to be replaced
-            // with the actual video rendering API when available
-            // For now, we'll just log that video rendering was requested
-
-            println("TGLIVE: 🎥 Video renderer set successfully (placeholder implementation)")
+            println("TGLIVE: 🎥 Setting video renderer for participant $participantUserId in group call $groupCallId")
+            // TODO: Implement actual TDLib video rendering for specific participant and surface
+            // This would typically involve using TdApi.SetGroupCallParticipantVideo and/or native JNI calls
+            // For now, assume success for UI logic to proceed.
+            println("TGLIVE: 🎥 Video renderer set (placeholder implementation)")
             true
         } catch (e: Exception) {
-            println("TGLIVE: ❌ Exception setting video renderer: ${e.message}")
+            println("TGLIVE: ❌ Exception setting video renderer (placeholder): ${e.message}")
             false
         }
     }
 
     /**
-     * Clear video renderer for group call
-     * @param groupCallId The group call ID
+     * Clear video renderer for a specific participant in a group call.
+     * @param groupCallId The group call ID.
+     * @param participantUserId The user ID of the participant whose video renderer is to be cleared.
      */
-    fun clearVideoRenderer(groupCallId: Int) {
-        try {
-            println("TGLIVE: 🎥 Clearing video renderer for group call $groupCallId")
-            // Clear video rendering for the specified group call
+    suspend fun clearVideoRenderer(groupCallId: Int, participantUserId: Long): Boolean {
+        return try {
+            println("TGLIVE: 🎥 Clearing video renderer for participant $participantUserId in group call $groupCallId")
+            // TODO: Implement actual TDLib video renderer clearing for specific participant
+            // This would typically involve using TdApi.SetGroupCallParticipantVideo with is_enabled=false
+            // For now, assume success.
             println("TGLIVE: 🎥 Video renderer cleared (placeholder implementation)")
+            true
         } catch (e: Exception) {
-            println("TGLIVE: ❌ Exception clearing video renderer: ${e.message}")
+            println("TGLIVE: ❌ Exception clearing video renderer (placeholder): ${e.message}")
+            false
         }
     }
 }

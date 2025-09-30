@@ -10,5 +10,6 @@ data class GroupCallInfo(
     val participantCount: Int,
     val isActive: Boolean,
     val canBeManaged: Boolean,
-    val isJoined: Boolean
+    val isJoined: Boolean,
+    val inviteLink: String = "", // Add invite link to GroupCallInfo
 )

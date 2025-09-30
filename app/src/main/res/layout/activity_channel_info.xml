@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -7,45 +7,135 @@
     android:background="@android:color/black"
     tools:context=".ui.ChannelInfoActivity">
 
-    <!-- High-Performance Video Player Container -->
-    <FrameLayout
-        android:id="@+id/flVideoPlayerContainer"
+    <!-- Main Content Area: Video Player and Comments (uses LinearLayout for vertical weighting) -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginTop="120dp"
-        android:layout_marginBottom="120dp"
-        android:background="#000000"
-        android:visibility="visible">
+        android:orientation="vertical">
 
-        <!-- Fast SurfaceView for Video Rendering -->
-        <SurfaceView
-            android:id="@+id/svVideoPlayer"
+        <!-- Video Player Container (Top Half) -->
+        <FrameLayout
+            android:id="@+id/flVideoPlayerContainer"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="#000000" />
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@android:color/black"
+            android:visibility="visible">
 
-        <!-- Camera Off Message Overlay -->
-        <TextView
-            android:id="@+id/tvCameraOff"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="Camera Off"
-            android:textColor="@android:color/white"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:background="#80000000"
-            android:padding="24dp"
-            android:visibility="visible" />
+            <!-- Video Grids for Dynamic Layout -->
+            <LinearLayout
+                android:id="@+id/llVideoGrid"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:background="@android:color/black"
+                android:visibility="gone"> <!-- Initially hidden, shown when video starts -->
 
-    </FrameLayout>
+                <!-- Row 1 for 2x2 grid / 2 speakers horizontal -->
+                <LinearLayout
+                    android:id="@+id/llVideoRow1"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:orientation="horizontal">
+
+                    <SurfaceView
+                        android:id="@+id/svVideoPlayer1"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:visibility="gone" />
+
+                    <SurfaceView
+                        android:id="@+id/svVideoPlayer2"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <!-- Row 2 for 2x2 grid -->
+                <LinearLayout
+                    android:id="@+id/llVideoRow2"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <SurfaceView
+                        android:id="@+id/svVideoPlayer3"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:visibility="gone" />
+
+                    <SurfaceView
+                        android:id="@+id/svVideoPlayer4"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- Camera Off Message Overlay -->
+            <TextView
+                android:id="@+id/tvCameraOff"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="Camera Off"
+                android:textColor="@android:color/white"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:background="#80000000"
+                android:padding="24dp"
+                android:visibility="visible" />
+        </FrameLayout>
+
+        <!-- Comments Section (Bottom Half) -->
+        <LinearLayout
+            android:id="@+id/llCommentsSection"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="@android:color/black"
+            android:padding="8dp"
+            android:visibility="gone"> <!-- Initially hidden, shown when stream is active -->
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Comments"
+                android:textColor="@android:color/white"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <!-- RecyclerView for Comments -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvComments"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="@android:color/darker_gray" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Overlays -->
 
     <!-- Main Background (when no video) -->
     <View
         android:id="@+id/vLiveStreamBackground"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#1A1A1A" />
+        android:background="#1A1A1A"
+        android:visibility="gone"/>
 
     <!-- Stream Ended Message (Center) -->
     <TextView
@@ -57,6 +147,7 @@
         android:textSize="18sp"
         android:textColor="@android:color/white"
         android:textStyle="normal"
+        android:gravity="center"
         android:visibility="gone"
         tools:visibility="visible" />
 
@@ -138,7 +229,7 @@
             android:layout_width="32dp"
             android:layout_height="32dp"
             android:src="@drawable/ic_share"
-            android:tint="@android:color/white"
+            app:tint="@android:color/white"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:padding="6dp"
             android:layout_marginStart="8dp"
@@ -150,14 +241,12 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
+        android:layout_alignParentBottom="true"
         android:orientation="vertical"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
         android:paddingTop="16dp"
         android:paddingBottom="43dp">
-
-
 
         <!-- Bottom Action Bar -->
         <LinearLayout
@@ -239,6 +328,50 @@
 
         </LinearLayout>
 
+    </LinearLayout>
+
+    <!-- Comment Input Container (Positioned above keyboard) -->
+    <LinearLayout
+        android:id="@+id/llCommentInputContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal"
+        android:background="@android:color/black"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:visibility="gone"
+        android:gravity="center_vertical"
+        android:elevation="8dp">
+
+        <EditText
+            android:id="@+id/etCommentInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Say something..."
+            android:textColorHint="@android:color/darker_gray"
+            android:textColor="@color/input_text"
+            android:background="@drawable/bg_input_field"
+            android:padding="12dp"
+            android:maxLines="3"
+            android:minHeight="48dp" />
+
+        <ImageView
+            android:id="@+id/ivSendButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_send"
+            app:tint="@android:color/white"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:padding="8dp"
+            android:layout_marginStart="8dp"
+            android:contentDescription="Send message"
+            android:clickable="true"
+            android:focusable="true"
+            android:enabled="false" />
     </LinearLayout>
 
     <!-- Channel Details Modal (Slide-up from bottom) -->
@@ -365,4 +498,4 @@
 
     </FrameLayout>
 
-</FrameLayout>
+</RelativeLayout>

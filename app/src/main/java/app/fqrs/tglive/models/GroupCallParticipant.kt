@@ -8,6 +8,7 @@ import org.drinkless.tdlib.TdApi
  */
 data class GroupCallParticipant(
     val participantId: TdApi.MessageSender,
+    val tdId: Long, // TDLib user ID or chat ID
     val displayName: String,
     val profilePhoto: TdApi.ProfilePhoto?,
     val isMuted: Boolean,

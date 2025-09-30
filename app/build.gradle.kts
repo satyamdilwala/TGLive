@@ -63,6 +63,7 @@ dependencies {
     // Enhanced Material Design Components
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation("androidx.cardview:cardview:1.0.0")
     
     // TDLib will be used via JNI directly - no JAR needed
     
