@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewTreeObserver
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import app.fqrs.tglive.databinding.ActivityChannelInfoBinding
@@ -43,6 +44,7 @@ class ChannelInfoActivity : AppCompatActivity() {
     
     companion object {
         const val EXTRA_CHANNEL_HANDLE = "channel_handle"
+        private const val LOG_JOIN = "TGLive_Join"
     }
     
     private lateinit var binding: ActivityChannelInfoBinding
@@ -746,24 +748,37 @@ class ChannelInfoActivity : AppCompatActivity() {
     private suspend fun joinGroupCall(groupCallId: Int) {
         if (isJoinedToCall) {
             println("TGLIVE: Already joined to group call $groupCallId")
+            println("$LOG_JOIN: already_joined groupCallId=$groupCallId")
+            Log.i(LOG_JOIN, "already_joined groupCallId=$groupCallId")
             return
         }
         try {
             println("TGLIVE: Attempting to join group call $groupCallId")
-            val joinResult = groupCallManager.joinGroupCall(groupCallId)
+            println("$LOG_JOIN: attempt groupCallId=$groupCallId")
+            Log.i(LOG_JOIN, "attempt groupCallId=$groupCallId")
+            val chatId = currentChannelInfo?.id ?: 0L
+            val joinResult = groupCallManager.joinGroupCall(chatId, groupCallId)
             if (joinResult) {
                 isJoinedToCall = true
                 println("TGLIVE: Successfully joined group call $groupCallId")
+                println("$LOG_JOIN: success groupCallId=$groupCallId")
+                Log.i(LOG_JOIN, "success groupCallId=$groupCallId")
                 showUpdateNotification("Joined live stream!")
                 // Once joined, set up group call updates
                 setupGroupCallUpdates(groupCallId)
             } else {
                 println("TGLIVE: Failed to join group call $groupCallId")
-                showError("Failed to join live stream")
+                println("$LOG_JOIN: failure groupCallId=$groupCallId")
+                Log.w(LOG_JOIN, "failure groupCallId=$groupCallId")
+                // Keep UI intact; just notify.
+                showUpdateNotification("Failed to join live stream")
             }
         } catch (e: Exception) {
             println("TGLIVE: Exception joining group call $groupCallId: ${e.message}")
-            showError("Error joining live stream: ${e.message}")
+            println("$LOG_JOIN: exception groupCallId=$groupCallId message=${e.message}")
+            Log.e(LOG_JOIN, "exception groupCallId=$groupCallId message=${e.message}")
+            // Don't flip the whole screen into error; just notify
+            showUpdateNotification("Error joining live stream")
         }
     }
 
@@ -1416,4 +1431,5 @@ class ChannelInfoActivity : AppCompatActivity() {
             false // Let other touch events be handled
         }
     }
+    
 }

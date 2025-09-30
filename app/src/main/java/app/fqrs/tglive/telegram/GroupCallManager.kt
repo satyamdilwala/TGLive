@@ -45,7 +45,11 @@ import org.drinkless.tdlib.TdApi
  * 
  * Requirements: 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 5.1, 5.2, 5.3, 5.4, 5.5
  */
+import android.util.Log
+import app.fqrs.tglive.voip.VoipEngine
+
 class GroupCallManager(private val client: TelegramClient) {
+    private val LOG_JOIN = "TGLive_Join"
     
     private val _groupCallUpdates = MutableSharedFlow<GroupCallUpdate>()
     private val groupCallUpdates: SharedFlow<GroupCallUpdate> = _groupCallUpdates.asSharedFlow()
@@ -171,59 +175,133 @@ class GroupCallManager(private val client: TelegramClient) {
      * Join a group call
      * Requirements: 4.2, 4.3 - join group call functionality
      */
-    suspend fun joinGroupCall(groupCallId: Int): Boolean {
+    suspend fun joinGroupCall(chatId: Long, groupCallId: Int): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 println("TGLIVE: Attempting to join group call $groupCallId using TDLib API")
+                println("$LOG_JOIN: start groupCallId=$groupCallId chatId=$chatId")
+                Log.i(LOG_JOIN, "start groupCallId=$groupCallId chatId=$chatId")
 
                 val groupCallInfo = getGroupCall(groupCallId) // Get full GroupCallInfo, which includes inviteLink
-                if (groupCallInfo == null || !groupCallInfo.isActive || groupCallInfo.inviteLink.isEmpty()) {
-                    println("TGLIVE: Cannot join group call $groupCallId - not active, not found, or no invite link")
+                if (groupCallInfo == null || !groupCallInfo.isActive) {
+                    println("TGLIVE: Cannot join group call $groupCallId - not active or not found")
                     return@withContext false
                 }
-                
-                val inputGroupCall = TdApi.InputGroupCallLink(groupCallInfo.inviteLink)
-                // Default join parameters for a viewer (audio/video off initially)
-                val joinParameters = TdApi.GroupCallJoinParameters(
-                    0, // audioSourceId (0 for listener/default)
-                    "", // payload (String, empty for default)
-                    false, // isMuted (false to start unmuted)
-                    false // isMyVideoEnabled (false to start with video off)
+
+                // Attempt 1: JoinVideoChat (preferred for chat-bound video chats)
+                // Initialize VOIP engine (stub for now) and produce a non-empty payload
+                println("$LOG_JOIN: initializing_voip groupCallId=$groupCallId")
+                VoipEngine.initialize(client.getAppContext())
+                val payload = VoipEngine.getJoinPayload(chatId, groupCallId)
+                println("$LOG_JOIN: voip_payload groupCallId=$groupCallId payloadLen=${payload.length} payload=${payload.take(50)}...")
+
+                val joinParams = TdApi.GroupCallJoinParameters(
+                    1,          // audioSourceId (must be non-zero)
+                    payload,    // payload (must be non-empty)
+                    false,      // isMuted
+                    false       // isMyVideoEnabled
                 )
-                val joinGroupCall = TdApi.JoinGroupCall(inputGroupCall, joinParameters)
+                println("$LOG_JOIN: join_params groupCallId=$groupCallId payloadLen=${joinParams.payload.length}")
 
-                val result = client.send(joinGroupCall)
-
-                when (result.constructor) {
-                    TdApi.Ok.CONSTRUCTOR -> {
-                        println("TGLIVE: Successfully joined group call $groupCallId")
-                        true
-                    }
-                    TdApi.Error.CONSTRUCTOR -> {
-                        val error = result as TdApi.Error
-                        println("TGLIVE: JoinGroupCall error: ${error.code} - ${error.message}")
-                        
-                        // Handle specific error cases, e.g., if already a participant
-                        when (error.code) {
-                            400 -> {
-                                if (error.message.contains("GROUP_CALL_NOT_FOUND")) {
-                                    println("TGLIVE: Group call not found when joining")
-                                } else if (error.message.contains("GROUP_CALL_ALREADY_JOINED")) {
-                                    println("TGLIVE: Already joined group call $groupCallId")
-                                    return@withContext true // Consider it a success if already joined
-                                }
-                            }
-                        }
-                        false
-                    }
-                    else -> {
-                        println("TGLIVE: Unexpected JoinGroupCall result: ${result.javaClass.simpleName}")
-                        false
+                // Get invite URL (HttpUrl) to possibly include inviteHash
+                var inviteUrl = ""
+                run {
+                    val linkResult = client.send(TdApi.GetVideoChatInviteLink(groupCallId, true))
+                    if (linkResult.constructor == TdApi.HttpUrl.CONSTRUCTOR) {
+                        val httpUrl = linkResult as TdApi.HttpUrl
+                        inviteUrl = httpUrl.url ?: ""
+                        println("TGLIVE: Invite URL: ${inviteUrl}")
+                    } else if (groupCallInfo.inviteLink.isNotEmpty()) {
+                        inviteUrl = groupCallInfo.inviteLink
                     }
                 }
+
+                fun extractInviteHash(url: String): String {
+                    // Best-effort: read query param after "invite=" or fragment at end
+                    val qIndex = url.indexOf("invite=")
+                    if (qIndex >= 0) {
+                        val sub = url.substring(qIndex + 7)
+                        val end = listOf('&', '#').map { c -> sub.indexOf(c) }.filter { it >= 0 }.minOrNull() ?: -1
+                        return if (end >= 0) sub.substring(0, end) else sub
+                    }
+                    return ""
+                }
+
+                val inviteHash = extractInviteHash(inviteUrl)
+
+                val joinVideoChat = TdApi.JoinVideoChat(
+                    groupCallId,
+                    null,        // participantId -> join as self
+                    joinParams,
+                    inviteHash
+                )
+
+                println("$LOG_JOIN: joinVideoChat.try groupCallId=$groupCallId inviteHash=${inviteHash}")
+                Log.i(LOG_JOIN, "joinVideoChat.try groupCallId=$groupCallId inviteHash=${inviteHash}")
+                println("$LOG_JOIN: joinVideoChat.params groupCallId=$groupCallId audioSourceId=${joinParams.audioSourceId} payloadLen=${joinParams.payload.length} isMuted=${joinParams.isMuted} isMyVideoEnabled=${joinParams.isMyVideoEnabled}")
+                Log.i(LOG_JOIN, "joinVideoChat.params groupCallId=$groupCallId audioSourceId=${joinParams.audioSourceId} payloadLen=${joinParams.payload.length} isMuted=${joinParams.isMuted} isMyVideoEnabled=${joinParams.isMyVideoEnabled}")
+                val result1 = client.send(joinVideoChat)
+                if (result1.constructor != TdApi.Error.CONSTRUCTOR) {
+                    println("TGLIVE: Successfully joined via JoinVideoChat")
+                    println("$LOG_JOIN: joinVideoChat.success groupCallId=$groupCallId")
+                    Log.i(LOG_JOIN, "joinVideoChat.success groupCallId=$groupCallId")
+                    return@withContext true
+                } else {
+                    val err = result1 as TdApi.Error
+                    println("TGLIVE: JoinVideoChat error: ${err.code} - ${err.message}")
+                    println("$LOG_JOIN: joinVideoChat.error groupCallId=$groupCallId code=${err.code} message=${err.message}")
+                    Log.w(LOG_JOIN, "joinVideoChat.error groupCallId=$groupCallId code=${err.code} message=${err.message}")
+                }
+
+                // Small retry after 500ms in case of race
+                kotlinx.coroutines.delay(500)
+                println("$LOG_JOIN: joinVideoChat.retry groupCallId=$groupCallId")
+                Log.i(LOG_JOIN, "joinVideoChat.retry groupCallId=$groupCallId")
+                val resultRetry = client.send(joinVideoChat)
+                if (resultRetry.constructor != TdApi.Error.CONSTRUCTOR) {
+                    println("TGLIVE: Successfully joined via JoinVideoChat on retry")
+                    println("$LOG_JOIN: joinVideoChat.retry.success groupCallId=$groupCallId")
+                    Log.i(LOG_JOIN, "joinVideoChat.retry.success groupCallId=$groupCallId")
+                    return@withContext true
+                } else {
+                    val err = resultRetry as TdApi.Error
+                    println("TGLIVE: JoinVideoChat retry error: ${err.code} - ${err.message}")
+                    println("$LOG_JOIN: joinVideoChat.retry.error groupCallId=$groupCallId code=${err.code} message=${err.message}")
+                    Log.w(LOG_JOIN, "joinVideoChat.retry.error groupCallId=$groupCallId code=${err.code} message=${err.message}")
+                }
+
+                // Fallback: JoinGroupCall using InputGroupCallLink if we have any URL
+                if (inviteUrl.isNotEmpty()) {
+                    val inputGroupCall = TdApi.InputGroupCallLink(inviteUrl)
+                    val joinGroupCall = TdApi.JoinGroupCall(inputGroupCall, joinParams)
+                    println("$LOG_JOIN: joinGroupCall.try groupCallId=$groupCallId inviteUrlSet=${inviteUrl.isNotEmpty()}")
+                    Log.i(LOG_JOIN, "joinGroupCall.try groupCallId=$groupCallId inviteUrlSet=${inviteUrl.isNotEmpty()}")
+                    val result2 = client.send(joinGroupCall)
+                    if (result2.constructor == TdApi.GroupCallInfo.CONSTRUCTOR || result2.constructor == TdApi.Ok.CONSTRUCTOR) {
+                        println("TGLIVE: Successfully joined via JoinGroupCall fallback")
+                        println("$LOG_JOIN: joinGroupCall.success groupCallId=$groupCallId")
+                        Log.i(LOG_JOIN, "joinGroupCall.success groupCallId=$groupCallId")
+                        return@withContext true
+                    } else if (result2.constructor == TdApi.Error.CONSTRUCTOR) {
+                        val error = result2 as TdApi.Error
+                        println("TGLIVE: JoinGroupCall fallback error: ${error.code} - ${error.message}")
+                        println("$LOG_JOIN: joinGroupCall.error groupCallId=$groupCallId code=${error.code} message=${error.message}")
+                        Log.w(LOG_JOIN, "joinGroupCall.error groupCallId=$groupCallId code=${error.code} message=${error.message}")
+                        if (error.message.contains("GROUP_CALL_ALREADY_JOINED")) {
+                            println("$LOG_JOIN: already_joined.ok groupCallId=$groupCallId")
+                            Log.i(LOG_JOIN, "already_joined.ok groupCallId=$groupCallId")
+                            return@withContext true
+                        }
+                    }
+                }
+                println("$LOG_JOIN: end.failure groupCallId=$groupCallId")
+                Log.w(LOG_JOIN, "end.failure groupCallId=$groupCallId")
+                false
             } catch (e: Exception) {
                 println("TGLIVE: Exception in joinGroupCall: ${e.message}")
                 e.printStackTrace()
+                println("$LOG_JOIN: exception groupCallId=$groupCallId message=${e.message}")
+                Log.e(LOG_JOIN, "exception groupCallId=$groupCallId message=${e.message}")
                 false
             }
         }
