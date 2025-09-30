@@ -15,5 +15,6 @@ data class GroupCallParticipant(
     val isSpeaking: Boolean,
     val hasVideo: Boolean,
     val isScreenSharing: Boolean,
+    val canSelfUnmute: Boolean, // Whether participant can unmute themselves
     val joinedTimestamp: Int
 )

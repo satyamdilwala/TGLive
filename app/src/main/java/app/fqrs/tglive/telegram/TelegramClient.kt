@@ -3,6 +3,7 @@ package app.fqrs.tglive.telegram
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import org.drinkless.tdlib.Client
@@ -605,9 +606,11 @@ class TelegramClient(private val context: Context) {
      */
     suspend fun subscribeToGroupCallUpdates(groupCallId: Int): Boolean {
         return try {
+            Log.i("TGLIVE_xyz", "🔔 Subscribing to INSTANT group call updates for call $groupCallId")
             println("TGLIVE: 🔔 Subscribing to INSTANT group call updates for call $groupCallId")
             
             // 1. Load group call participants to ensure we get updates
+            Log.i("TGLIVE_xyz", "Calling LoadGroupCallParticipants for groupCallId=$groupCallId")
             val loadResult = send(TdApi.LoadGroupCallParticipants(groupCallId, 100))
             
             // 2. Get the current group call to ensure we're subscribed
@@ -615,15 +618,18 @@ class TelegramClient(private val context: Context) {
             
             when (loadResult.constructor) {
                 TdApi.Ok.CONSTRUCTOR -> {
+                    Log.i("TGLIVE_xyz", "✅ LoadGroupCallParticipants succeeded for groupCallId=$groupCallId")
                     println("TGLIVE: ✅ Successfully subscribed to INSTANT updates for group call $groupCallId")
                     
                     // Also verify the call exists
                     when (getCallResult.constructor) {
                         TdApi.GroupCall.CONSTRUCTOR -> {
                             val groupCall = getCallResult as TdApi.GroupCall
+                            Log.i("TGLIVE_xyz", "✅ Group call verified - isActive: ${groupCall.isActive}, participants: ${groupCall.participantCount}")
                             println("TGLIVE: ✅ Group call verified - isActive: ${groupCall.isActive}, participants: ${groupCall.participantCount}")
                         }
                         else -> {
+                            Log.w("TGLIVE_xyz", "⚠️ Group call verification failed, but subscription may still work")
                             println("TGLIVE: ⚠️ Group call verification failed, but subscription may still work")
                         }
                     }
@@ -632,15 +638,18 @@ class TelegramClient(private val context: Context) {
                 }
                 TdApi.Error.CONSTRUCTOR -> {
                     val error = loadResult as TdApi.Error
+                    Log.e("TGLIVE_xyz", "❌ LoadGroupCallParticipants failed: ${error.code} - ${error.message}")
                     println("TGLIVE: ⚠️ Failed to subscribe to group call updates: ${error.message}")
                     
                     // Still try to get the call info - we might get some updates anyway
                     when (getCallResult.constructor) {
                         TdApi.GroupCall.CONSTRUCTOR -> {
+                            Log.i("TGLIVE_xyz", "✅ Group call exists, may still get some updates")
                             println("TGLIVE: ✅ Group call exists, may still get some updates")
                             true
                         }
                         else -> {
+                            Log.e("TGLIVE_xyz", "❌ Group call doesn't exist")
                             println("TGLIVE: ❌ Group call doesn't exist")
                             false
                         }

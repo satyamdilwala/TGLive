@@ -34,6 +34,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 
@@ -57,6 +58,8 @@ class ChannelInfoActivity : AppCompatActivity() {
     private var currentGroupCallInfo: GroupCallInfo? = null
     private var channelHandle: String? = null
     private var isJoinedToCall: Boolean = false
+    private var isJoiningInProgress: Boolean = false
+    
     
     // Modal state
     private var isModalVisible = false
@@ -80,7 +83,7 @@ class ChannelInfoActivity : AppCompatActivity() {
     private val videoSurfaceViews = mutableListOf<SurfaceView>()
     private val videoSurfaceHolders = mutableListOf<SurfaceHolder?>()
     private var isVideoPlayerInitialized = false
-    private val activeVideoStreams = mutableMapOf<String, Boolean>() // Map of participant_id to active video status
+    private val activeVideoStreams = mutableMapOf<String, GroupCallParticipant>() // Map of participant_id to participant data
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -133,6 +136,8 @@ class ChannelInfoActivity : AppCompatActivity() {
         
         // Setup touch outside listener
         setupTouchOutsideListener()
+        
+        // Rate limit test removed - only exit on back press
     }
     
     /**
@@ -448,6 +453,10 @@ class ChannelInfoActivity : AppCompatActivity() {
             try {
                 println("TGLIVE: Setting up group call updates for call ID: $groupCallId")
                 
+                // Subscribe to group call updates to ensure we receive real-time participant updates
+                val subscribeResult = telegramClient.subscribeToGroupCallUpdates(groupCallId)
+                println("TGLIVE: Subscribe to group call updates result: $subscribeResult")
+                
                 updatesHandler.observeGroupCallUpdates(groupCallId)
                     .catch { exception ->
                         println("TGLIVE: Error in group call updates flow: ${exception.message}")
@@ -542,6 +551,9 @@ class ChannelInfoActivity : AppCompatActivity() {
             when (update) {
                 is GroupCallUpdate.ParticipantJoined -> {
                     println("TGLIVE: 👤 PARTICIPANT JOINED: ${update.participant.displayName}")
+                    // Add to activeVideoStreams immediately
+                    val participantId = update.participant.tdId.toString()
+                    activeVideoStreams[participantId] = update.participant
 
                     runOnUiThread {
                         currentGroupCallInfo?.let { groupCall ->
@@ -557,6 +569,14 @@ class ChannelInfoActivity : AppCompatActivity() {
 
                 is GroupCallUpdate.ParticipantLeft -> {
                     println("TGLIVE: 👤 PARTICIPANT LEFT")
+                    // Remove from activeVideoStreams
+                    val participantIdToRemove = activeVideoStreams.keys.find { key ->
+                        // Try to match by participantId structure
+                        key.contains(update.participantId.toString())
+                    }
+                    if (participantIdToRemove != null) {
+                        activeVideoStreams.remove(participantIdToRemove)
+                    }
 
                     runOnUiThread {
                         currentGroupCallInfo?.let { groupCall ->
@@ -574,11 +594,11 @@ class ChannelInfoActivity : AppCompatActivity() {
                     println("TGLIVE: 🔄 PARTICIPANT STATUS CHANGED: ${update.participant.displayName}")
                     // Update the active video streams map and refresh UI
                     val participantId = update.participant.tdId.toString()
-                    val hasVideo = update.participant.hasVideo // Assuming GroupCallParticipant has hasVideo property
-                    activeVideoStreams[participantId] = hasVideo
+                    activeVideoStreams[participantId] = update.participant
+                    
+                    
                     
                     runOnUiThread {
-                        showUpdateNotification("${update.participant.displayName} status updated")
                         refreshVideoStreams()
                     }
                 }
@@ -590,9 +610,12 @@ class ChannelInfoActivity : AppCompatActivity() {
                         if (update.groupCallInfo.isActive) {
                             displayActiveVideoChat(update.groupCallInfo)
                             showUpdateNotification("🔴 ${update.groupCallInfo.participantCount} viewers")
+                            
+                            
                         } else {
                             displayNoVideoChat()
                             showUpdateNotification("⚫ Stream ended")
+                            
                         }
                     }
                 }
@@ -752,6 +775,15 @@ class ChannelInfoActivity : AppCompatActivity() {
             Log.i(LOG_JOIN, "already_joined groupCallId=$groupCallId")
             return
         }
+        
+        if (isJoiningInProgress) {
+            println("TGLIVE: Join already in progress for group call $groupCallId")
+            println("$LOG_JOIN: join_in_progress groupCallId=$groupCallId")
+            Log.i(LOG_JOIN, "join_in_progress groupCallId=$groupCallId")
+            return
+        }
+        
+        isJoiningInProgress = true
         try {
             println("TGLIVE: Attempting to join group call $groupCallId")
             println("$LOG_JOIN: attempt groupCallId=$groupCallId")
@@ -779,6 +811,8 @@ class ChannelInfoActivity : AppCompatActivity() {
             Log.e(LOG_JOIN, "exception groupCallId=$groupCallId message=${e.message}")
             // Don't flip the whole screen into error; just notify
             showUpdateNotification("Error joining live stream")
+        } finally {
+            isJoiningInProgress = false
         }
     }
 
@@ -802,6 +836,41 @@ class ChannelInfoActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             println("TGLIVE: Exception leaving group call: ${e.message}")
+        }
+    }
+    
+    /**
+     * Exit video chat and return to previous screen
+     */
+    private fun exitVideoChat() {
+        lifecycleScope.launch {
+            try {
+                // Cancel any ongoing join operations
+                isJoiningInProgress = false
+                
+                // Leave the group call if joined
+                if (isJoinedToCall) {
+                    leaveGroupCall()
+                }
+                
+                // Cancel group call updates
+                groupCallUpdateJob?.cancel()
+                groupCallUpdateJob = null
+                
+                // Clear current group call info
+                currentGroupCallInfo = null
+                
+                // Show notification
+                showUpdateNotification("Exited live stream")
+                
+                // Finish the activity
+                finish()
+                
+            } catch (e: Exception) {
+                println("TGLIVE: Exception exiting video chat: ${e.message}")
+                // Still finish the activity even if leaving fails
+                finish()
+            }
         }
     }
 
@@ -859,6 +928,11 @@ class ChannelInfoActivity : AppCompatActivity() {
         super.onDestroy()
 
         println("TGLIVE: Activity destroyed - cleaning up all resources")
+
+        // Cancel any ongoing join operations
+        isJoiningInProgress = false
+        
+        // Rate limit test removed
 
         // Stop all video renderings
         try {
@@ -1005,6 +1079,10 @@ class ChannelInfoActivity : AppCompatActivity() {
             binding.llCommentInputContainer.visibility == View.VISIBLE -> {
                 toggleCommentInputVisibility(false)
             }
+            isJoinedToCall -> {
+                // Exit video chat first
+                exitVideoChat()
+            }
             else -> {
                 super.onBackPressed()
             }
@@ -1017,7 +1095,12 @@ class ChannelInfoActivity : AppCompatActivity() {
     private fun setupTikTokButtonListeners() {
         // Back button
         binding.ivBack.setOnClickListener {
-            finish()
+            if (isJoinedToCall) {
+                // Exit video chat first
+                exitVideoChat()
+            } else {
+                finish()
+            }
         }
 
         // Share button
@@ -1193,17 +1276,18 @@ class ChannelInfoActivity : AppCompatActivity() {
      */
     private fun refreshVideoStreams() {
         if (!isVideoPlayerInitialized || videoSurfaceHolders.any { it == null }) {
-            println("TGLIVE: Video players not ready for refreshing streams.")
             return
         }
 
         lifecycleScope.launch(Dispatchers.Main) {
             try {
-                println("TGLIVE: 🔄 Refreshing video streams...")
                 val currentGroupCallId = currentGroupCallInfo?.id ?: return@launch
-                val allParticipants = groupCallManager.getGroupCallParticipants(currentGroupCallId)
-                val participantsWithVideo = allParticipants.filter { it.hasVideo }
+                
+                // Use real-time participant data from activeVideoStreams
+                // Only show participants who can speak AND have video enabled
+                val participantsWithVideo = activeVideoStreams.values.filter { it.hasVideo && it.canSelfUnmute }
                 val activeSpeakersCount = participantsWithVideo.size
+
 
                 // Hide all surfaces and rows initially
                 videoSurfaceViews.forEach { it.visibility = View.GONE }
@@ -1216,7 +1300,7 @@ class ChannelInfoActivity : AppCompatActivity() {
                         displayCameraOffState()
                     }
                     else -> {
-                        // Display up to 4 active speakers
+                        // Display up to 4 active speakers who can speak and have video
                         for (i in 0 until minOf(activeSpeakersCount, 4)) {
                             val participant = participantsWithVideo[i]
                             val surfaceView = videoSurfaceViews[i]
@@ -1228,15 +1312,12 @@ class ChannelInfoActivity : AppCompatActivity() {
 
                             surfaceHolder?.let {
                                 telegramClient.setVideoRenderer(currentGroupCallInfo!!.id, participant.tdId, it.surface)
-                                println("TGLIVE: Rendering video for participant ${participant.tdId} on surface ${i+1}")
                             }
                         }
                         displayVideoPlayingState()
                     }
                 }
             } catch (e: Exception) {
-                println("TGLIVE: Exception refreshing video streams: ${e.message}")
-                e.printStackTrace()
                 displayCameraOffState()
             }
         }
@@ -1247,7 +1328,6 @@ class ChannelInfoActivity : AppCompatActivity() {
      */
     private suspend fun stopAllVideoRenderings() {
         try {
-            println("TGLIVE: Stopping all video renderings")
             currentGroupCallInfo?.let { groupCall ->
                 // Clear renderers for all actively streaming participants
                 activeVideoStreams.keys.forEach { participantUserIdString ->
@@ -1257,8 +1337,6 @@ class ChannelInfoActivity : AppCompatActivity() {
                 activeVideoStreams.clear() // Clear the map after stopping renderers
             }
         } catch (e: Exception) {
-            println("TGLIVE: Exception stopping all video renderings: ${e.message}")
-            e.printStackTrace()
         }
     }
 
@@ -1271,7 +1349,6 @@ class ChannelInfoActivity : AppCompatActivity() {
         binding.flVideoPlayerContainer.setBackgroundColor(android.graphics.Color.BLACK) // Set black background
         // Clear any active video flags
         activeVideoStreams.clear()
-        println("TGLIVE: Camera off state displayed")
     }
 
     /**
@@ -1281,8 +1358,9 @@ class ChannelInfoActivity : AppCompatActivity() {
         binding.llVideoGrid.visibility = View.VISIBLE // Show the video grid
         binding.tvCameraOff.visibility = View.GONE // Hide "Camera Off" text
         binding.flVideoPlayerContainer.setBackgroundColor(android.graphics.Color.TRANSPARENT) // Transparent background for video
-        println("TGLIVE: Video playing state displayed")
     }
+
+
 
     // Helper methods
     private fun showError(message: String) {
@@ -1431,5 +1509,6 @@ class ChannelInfoActivity : AppCompatActivity() {
             false // Let other touch events be handled
         }
     }
+    
     
 }

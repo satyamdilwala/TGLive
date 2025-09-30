@@ -1,5 +1,6 @@
 package app.fqrs.tglive.telegram
 
+import android.util.Log
 import app.fqrs.tglive.models.ChannelInfo
 import app.fqrs.tglive.models.ChannelUpdate
 import app.fqrs.tglive.models.GroupCallInfo
@@ -146,6 +147,7 @@ class UpdatesHandler(private val client: TelegramClient) {
                 
                 TdApi.UpdateGroupCallParticipant.CONSTRUCTOR -> {
                     val participantUpdate = update as TdApi.UpdateGroupCallParticipant
+                    Log.i("TGLIVE_xyz", "📨 Received UpdateGroupCallParticipant for groupCallId=${participantUpdate.groupCallId}")
                     handleGroupCallParticipantUpdate(participantUpdate.groupCallId, participantUpdate.participant)
                 }
                 
@@ -248,14 +250,17 @@ class UpdatesHandler(private val client: TelegramClient) {
      */
     private suspend fun handleGroupCallParticipantUpdate(groupCallId: Int, participant: TdApi.GroupCallParticipant) {
         try {
+            Log.i("TGLIVE_xyz", "Processing participant update for group call $groupCallId")
             println("TGLIVE: Processing participant update for group call $groupCallId")
             
             // Convert TdApi.GroupCallParticipant to our model
             val groupCallParticipant = convertToGroupCallParticipant(participant)
+            Log.i("TGLIVE_xyz", "Converted participant: name=${groupCallParticipant.displayName} tdId=${groupCallParticipant.tdId} canSelfUnmute=${groupCallParticipant.canSelfUnmute}")
             
             // Emit participant status change
             _groupCallUpdates.emit(Pair(groupCallId, GroupCallUpdate.ParticipantStatusChanged(groupCallParticipant)))
             
+            Log.i("TGLIVE_xyz", "Emitted participant status update for ${groupCallParticipant.displayName}")
             println("TGLIVE: Participant status updated for ${groupCallParticipant.displayName}")
         } catch (e: Exception) {
             println("TGLIVE: Exception handling participant update: ${e.message}")
@@ -508,6 +513,7 @@ class UpdatesHandler(private val client: TelegramClient) {
             isSpeaking = participant.isSpeaking,
             hasVideo = participant.videoInfo != null,
             isScreenSharing = participant.screenSharingVideoInfo != null,
+            canSelfUnmute = participant.canUnmuteSelf,
             joinedTimestamp = 0 // TDLib doesn't provide join timestamp directly
         )
     }

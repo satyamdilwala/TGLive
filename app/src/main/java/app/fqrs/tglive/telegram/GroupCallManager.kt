@@ -93,78 +93,31 @@ class GroupCallManager(private val client: TelegramClient) {
      * Get group call participants
      * Requirements: 4.1, 4.2, 5.1 - fetch participant data with status information
      */
-    suspend fun getGroupCallParticipants(groupCallId: Int): List<GroupCallParticipant> {
+    suspend fun getGroupCallParticipants(groupCallId: Int, chatId: Long? = null): List<GroupCallParticipant> {
         return withContext(Dispatchers.IO) {
             try {
-                println("TGLIVE: Loading participants for group call $groupCallId")
+                Log.i("TGLIVE_xyz", "getGroupCallParticipants called with groupCallId=$groupCallId")
+                Log.i("TGLIVE_xyz", "Loading participants for group call $groupCallId")
 
                 // First, get the basic GroupCall information to get the invite link, if any
                 val groupCallResult = client.send(TdApi.GetGroupCall(groupCallId))
                 val tdGroupCall = if (groupCallResult.constructor == TdApi.GroupCall.CONSTRUCTOR) {
                     groupCallResult as TdApi.GroupCall
                 } else {
-                    println("TGLIVE: Could not get TdApi.GroupCall object for ID $groupCallId to fetch participants.")
-                    return@withContext emptyList()
-                }
-
-                // TdApi.GetGroupCallParticipants requires an InputGroupCall.
-                // We'll use InputGroupCallLink if an inviteLink is available.
-                val inputGroupCall: TdApi.InputGroupCall? = if (!tdGroupCall.inviteLink.isNullOrEmpty()) {
-                    TdApi.InputGroupCallLink(tdGroupCall.inviteLink)
-                } else {
-                    // If no invite link, we can't use InputGroupCallLink directly.
-                    // Another way might be TdApi.InputGroupCallId (if it existed) or InputGroupCallMessage (needs chat/message ID).
-                    // For now, if no inviteLink, we assume we cannot get participants this way.
-                    println("TGLIVE: No invite link available for group call $groupCallId, cannot fetch participants via InputGroupCallLink.")
-                    null
-                }
-
-                if (inputGroupCall == null) {
+                    Log.e("TGLIVE_xyz", "Could not get TdApi.GroupCall object for ID $groupCallId to fetch participants.")
                     return@withContext emptyList()
                 }
                 
-                val result = client.send(TdApi.GetGroupCallParticipants(
-                    inputGroupCall, 
-                    100 // limit
-                ))
+                Log.i("TGLIVE_xyz", "GroupCall info - id=${tdGroupCall.id}, participantCount=${tdGroupCall.participantCount}, inviteLink=${tdGroupCall.inviteLink}")
 
-                when (result.constructor) {
-                    TdApi.GroupCallParticipants.CONSTRUCTOR -> {
-                        val tdGroupCallParticipants = result as TdApi.GroupCallParticipants
-                        // TdApi.GroupCallParticipants has participantIds (MessageSender[]), not GroupCallParticipant[]
-                        // So, we need to convert each MessageSender to GroupCallParticipant
-                        tdGroupCallParticipants.participantIds?.mapNotNull { messageSender ->
-                            // For now, we only have MessageSender. To get full GroupCallParticipant,
-                            // we would need more detailed TDLib calls (e.g., GetUser, then GetGroupCallParticipant to get videoInfo, etc.).
-                            // As a placeholder, we create a basic GroupCallParticipant from MessageSender
-                            val tdId = getTdIdFromMessageSender(messageSender)
-                            if (tdId != 0L) {
-                                GroupCallParticipant(
-                                    participantId = messageSender,
-                                    tdId = tdId,
-                                    displayName = getParticipantDisplayName(messageSender), // This is a suspend function
-                                    profilePhoto = getParticipantProfilePhoto(messageSender), // This is a suspend function
-                                    isMuted = false, // Placeholder, actual status comes from UpdateGroupCallParticipant
-                                    isSpeaking = false, // Placeholder
-                                    hasVideo = false, // Placeholder
-                                    isScreenSharing = false, // Placeholder
-                                    joinedTimestamp = 0 // Placeholder
-                                )
-                            } else null
-                        } ?: emptyList()
-                    }
-                    TdApi.Error.CONSTRUCTOR -> {
-                        val error = result as TdApi.Error
-                        println("TGLIVE: GetGroupCallParticipants error: ${error.code} - ${error.message}")
-                        emptyList()
-                    }
-                    else -> {
-                        println("TGLIVE: Unexpected GetGroupCallParticipants result: ${result.javaClass.simpleName}")
-                        emptyList()
-                    }
-                }
+                // TdApi.GetGroupCallParticipants requires an InputGroupCall.
+                // Since we don't have the message ID and invite link is empty, we'll return empty list
+                // and rely on real-time updates (UpdateGroupCallParticipant) to get participant data
+                Log.w("TGLIVE_xyz", "Cannot fetch participants via API - no invite link and no message ID available")
+                Log.i("TGLIVE_xyz", "Relying on real-time updates (UpdateGroupCallParticipant) for participant data")
+                return@withContext emptyList()
             } catch (e: Exception) {
-                println("TGLIVE: Exception in getGroupCallParticipants: ${e.message}")
+                Log.e("TGLIVE_xyz", "Exception in getGroupCallParticipants: ${e.message}")
                 e.printStackTrace()
                 emptyList()
             }
@@ -465,6 +418,7 @@ class GroupCallManager(private val client: TelegramClient) {
             isSpeaking = participant.isSpeaking,
             hasVideo = participant.videoInfo != null,
             isScreenSharing = participant.screenSharingVideoInfo != null,
+            canSelfUnmute = participant.canUnmuteSelf,
             joinedTimestamp = 0 // TDLib doesn't provide join timestamp directly
         )
     }
